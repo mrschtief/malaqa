@@ -17,38 +17,43 @@ const MeetingProofModelSchema = CollectionSchema(
   name: r'MeetingProofModel',
   id: -3755529693830975953,
   properties: {
-    r'latitude': PropertySchema(
+    r'ipfsCid': PropertySchema(
       id: 0,
+      name: r'ipfsCid',
+      type: IsarType.string,
+    ),
+    r'latitude': PropertySchema(
+      id: 1,
       name: r'latitude',
       type: IsarType.double,
     ),
     r'longitude': PropertySchema(
-      id: 1,
+      id: 2,
       name: r'longitude',
       type: IsarType.double,
     ),
     r'previousMeetingHash': PropertySchema(
-      id: 2,
+      id: 3,
       name: r'previousMeetingHash',
       type: IsarType.string,
     ),
     r'proofHash': PropertySchema(
-      id: 3,
+      id: 4,
       name: r'proofHash',
       type: IsarType.string,
     ),
     r'saltedVectorHash': PropertySchema(
-      id: 4,
+      id: 5,
       name: r'saltedVectorHash',
       type: IsarType.string,
     ),
     r'signaturesJson': PropertySchema(
-      id: 5,
+      id: 6,
       name: r'signaturesJson',
       type: IsarType.string,
     ),
     r'timestamp': PropertySchema(
-      id: 6,
+      id: 7,
       name: r'timestamp',
       type: IsarType.dateTime,
     )
@@ -87,6 +92,12 @@ int _meetingProofModelEstimateSize(
   Map<Type, List<int>> allOffsets,
 ) {
   var bytesCount = offsets.last;
+  {
+    final value = object.ipfsCid;
+    if (value != null) {
+      bytesCount += 3 + value.length * 3;
+    }
+  }
   bytesCount += 3 + object.previousMeetingHash.length * 3;
   bytesCount += 3 + object.proofHash.length * 3;
   bytesCount += 3 + object.saltedVectorHash.length * 3;
@@ -100,13 +111,14 @@ void _meetingProofModelSerialize(
   List<int> offsets,
   Map<Type, List<int>> allOffsets,
 ) {
-  writer.writeDouble(offsets[0], object.latitude);
-  writer.writeDouble(offsets[1], object.longitude);
-  writer.writeString(offsets[2], object.previousMeetingHash);
-  writer.writeString(offsets[3], object.proofHash);
-  writer.writeString(offsets[4], object.saltedVectorHash);
-  writer.writeString(offsets[5], object.signaturesJson);
-  writer.writeDateTime(offsets[6], object.timestamp);
+  writer.writeString(offsets[0], object.ipfsCid);
+  writer.writeDouble(offsets[1], object.latitude);
+  writer.writeDouble(offsets[2], object.longitude);
+  writer.writeString(offsets[3], object.previousMeetingHash);
+  writer.writeString(offsets[4], object.proofHash);
+  writer.writeString(offsets[5], object.saltedVectorHash);
+  writer.writeString(offsets[6], object.signaturesJson);
+  writer.writeDateTime(offsets[7], object.timestamp);
 }
 
 MeetingProofModel _meetingProofModelDeserialize(
@@ -117,13 +129,14 @@ MeetingProofModel _meetingProofModelDeserialize(
 ) {
   final object = MeetingProofModel();
   object.id = id;
-  object.latitude = reader.readDouble(offsets[0]);
-  object.longitude = reader.readDouble(offsets[1]);
-  object.previousMeetingHash = reader.readString(offsets[2]);
-  object.proofHash = reader.readString(offsets[3]);
-  object.saltedVectorHash = reader.readString(offsets[4]);
-  object.signaturesJson = reader.readString(offsets[5]);
-  object.timestamp = reader.readDateTime(offsets[6]);
+  object.ipfsCid = reader.readStringOrNull(offsets[0]);
+  object.latitude = reader.readDouble(offsets[1]);
+  object.longitude = reader.readDouble(offsets[2]);
+  object.previousMeetingHash = reader.readString(offsets[3]);
+  object.proofHash = reader.readString(offsets[4]);
+  object.saltedVectorHash = reader.readString(offsets[5]);
+  object.signaturesJson = reader.readString(offsets[6]);
+  object.timestamp = reader.readDateTime(offsets[7]);
   return object;
 }
 
@@ -135,11 +148,11 @@ P _meetingProofModelDeserializeProp<P>(
 ) {
   switch (propertyId) {
     case 0:
-      return (reader.readDouble(offset)) as P;
+      return (reader.readStringOrNull(offset)) as P;
     case 1:
       return (reader.readDouble(offset)) as P;
     case 2:
-      return (reader.readString(offset)) as P;
+      return (reader.readDouble(offset)) as P;
     case 3:
       return (reader.readString(offset)) as P;
     case 4:
@@ -147,6 +160,8 @@ P _meetingProofModelDeserializeProp<P>(
     case 5:
       return (reader.readString(offset)) as P;
     case 6:
+      return (reader.readString(offset)) as P;
+    case 7:
       return (reader.readDateTime(offset)) as P;
     default:
       throw IsarError('Unknown property with id $propertyId');
@@ -402,6 +417,160 @@ extension MeetingProofModelQueryFilter
         includeLower: includeLower,
         upper: upper,
         includeUpper: includeUpper,
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidIsNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNull(
+        property: r'ipfsCid',
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidIsNotNull() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(const FilterCondition.isNotNull(
+        property: r'ipfsCid',
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidEqualTo(
+    String? value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'ipfsCid',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidGreaterThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        include: include,
+        property: r'ipfsCid',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidLessThan(
+    String? value, {
+    bool include = false,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.lessThan(
+        include: include,
+        property: r'ipfsCid',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidBetween(
+    String? lower,
+    String? upper, {
+    bool includeLower = true,
+    bool includeUpper = true,
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.between(
+        property: r'ipfsCid',
+        lower: lower,
+        includeLower: includeLower,
+        upper: upper,
+        includeUpper: includeUpper,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidStartsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.startsWith(
+        property: r'ipfsCid',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidEndsWith(
+    String value, {
+    bool caseSensitive = true,
+  }) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.endsWith(
+        property: r'ipfsCid',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidContains(String value, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.contains(
+        property: r'ipfsCid',
+        value: value,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidMatches(String pattern, {bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.matches(
+        property: r'ipfsCid',
+        wildcard: pattern,
+        caseSensitive: caseSensitive,
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidIsEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.equalTo(
+        property: r'ipfsCid',
+        value: '',
+      ));
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterFilterCondition>
+      ipfsCidIsNotEmpty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addFilterCondition(FilterCondition.greaterThan(
+        property: r'ipfsCid',
+        value: '',
       ));
     });
   }
@@ -1148,6 +1317,20 @@ extension MeetingProofModelQueryLinks
 extension MeetingProofModelQuerySortBy
     on QueryBuilder<MeetingProofModel, MeetingProofModel, QSortBy> {
   QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterSortBy>
+      sortByIpfsCid() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ipfsCid', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterSortBy>
+      sortByIpfsCidDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ipfsCid', Sort.desc);
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterSortBy>
       sortByLatitude() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'latitude', Sort.asc);
@@ -1262,6 +1445,20 @@ extension MeetingProofModelQuerySortThenBy
   }
 
   QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterSortBy>
+      thenByIpfsCid() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ipfsCid', Sort.asc);
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterSortBy>
+      thenByIpfsCidDesc() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addSortBy(r'ipfsCid', Sort.desc);
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QAfterSortBy>
       thenByLatitude() {
     return QueryBuilder.apply(this, (query) {
       return query.addSortBy(r'latitude', Sort.asc);
@@ -1363,6 +1560,13 @@ extension MeetingProofModelQuerySortThenBy
 extension MeetingProofModelQueryWhereDistinct
     on QueryBuilder<MeetingProofModel, MeetingProofModel, QDistinct> {
   QueryBuilder<MeetingProofModel, MeetingProofModel, QDistinct>
+      distinctByIpfsCid({bool caseSensitive = true}) {
+    return QueryBuilder.apply(this, (query) {
+      return query.addDistinctBy(r'ipfsCid', caseSensitive: caseSensitive);
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, MeetingProofModel, QDistinct>
       distinctByLatitude() {
     return QueryBuilder.apply(this, (query) {
       return query.addDistinctBy(r'latitude');
@@ -1420,6 +1624,12 @@ extension MeetingProofModelQueryProperty
   QueryBuilder<MeetingProofModel, int, QQueryOperations> idProperty() {
     return QueryBuilder.apply(this, (query) {
       return query.addPropertyName(r'id');
+    });
+  }
+
+  QueryBuilder<MeetingProofModel, String?, QQueryOperations> ipfsCidProperty() {
+    return QueryBuilder.apply(this, (query) {
+      return query.addPropertyName(r'ipfsCid');
     });
   }
 

@@ -12,6 +12,7 @@ class MeetingProof {
     required this.saltedVectorHash,
     required this.previousMeetingHash,
     required List<ParticipantSignature> signatures,
+    this.ipfsCid,
   }) : signatures = List<ParticipantSignature>.unmodifiable(signatures);
 
   final String timestamp;
@@ -19,6 +20,7 @@ class MeetingProof {
   final String saltedVectorHash;
   final String previousMeetingHash;
   final List<ParticipantSignature> signatures;
+  final String? ipfsCid;
 
   Map<String, dynamic> toJson() {
     return {
@@ -27,6 +29,7 @@ class MeetingProof {
       'saltedVectorHash': saltedVectorHash,
       'previousMeetingHash': previousMeetingHash,
       'signatures': signatures.map((s) => s.toJson()).toList(),
+      if (ipfsCid != null) 'ipfsCid': ipfsCid,
     };
   }
 
@@ -40,6 +43,25 @@ class MeetingProof {
       signatures: (json['signatures'] as List<dynamic>)
           .map((s) => ParticipantSignature.fromJson(s as Map<String, dynamic>))
           .toList(),
+      ipfsCid: json['ipfsCid'] as String?,
+    );
+  }
+
+  MeetingProof copyWith({
+    String? timestamp,
+    LocationPoint? location,
+    String? saltedVectorHash,
+    String? previousMeetingHash,
+    List<ParticipantSignature>? signatures,
+    Object? ipfsCid = _unset,
+  }) {
+    return MeetingProof(
+      timestamp: timestamp ?? this.timestamp,
+      location: location ?? this.location,
+      saltedVectorHash: saltedVectorHash ?? this.saltedVectorHash,
+      previousMeetingHash: previousMeetingHash ?? this.previousMeetingHash,
+      signatures: signatures ?? this.signatures,
+      ipfsCid: identical(ipfsCid, _unset) ? this.ipfsCid : ipfsCid as String?,
     );
   }
 
@@ -119,3 +141,5 @@ class MeetingProof {
     return true;
   }
 }
+
+const Object _unset = Object();

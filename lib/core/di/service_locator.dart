@@ -8,12 +8,15 @@ import '../../data/datasources/tflite_biometric_scanner.dart';
 import '../../data/datasources/nearby_service.dart';
 import '../../data/models/meeting_proof_model.dart';
 import '../../data/repositories/isar_chain_repository.dart';
+import '../../data/repositories/ipfs_repository.dart';
 import '../../data/repositories/secure_identity_repository.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
 import '../../domain/gamification/badge_manager.dart';
 import '../../domain/repositories/chain_repository.dart';
 import '../../domain/repositories/identity_repository.dart';
+import '../../domain/repositories/ipfs_repository.dart';
 import '../../domain/services/chain_manager.dart';
+import '../../domain/services/decentralized_sync_service.dart';
 import '../../domain/services/face_matcher_service.dart';
 import '../../domain/services/meeting_handshake_service.dart';
 import '../../domain/services/meeting_participant_resolver.dart';
@@ -132,6 +135,21 @@ Future<void> configureDependencies({
         getIt<Isar>(),
         getIt<VerifyMeetingProofUseCase>(),
         getIt<CryptoProvider>(),
+      ),
+    );
+  }
+
+  if (!getIt.isRegistered<IpfsRepository>()) {
+    getIt.registerLazySingleton<IpfsRepository>(HttpIpfsRepository.new);
+  }
+
+  if (getIt.isRegistered<ChainRepository>() &&
+      getIt.isRegistered<IpfsRepository>() &&
+      !getIt.isRegistered<DecentralizedSyncService>()) {
+    getIt.registerLazySingleton<DecentralizedSyncService>(
+      () => DecentralizedSyncService(
+        chainRepository: getIt<ChainRepository>(),
+        ipfsRepository: getIt<IpfsRepository>(),
       ),
     );
   }

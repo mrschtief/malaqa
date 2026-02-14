@@ -21,6 +21,7 @@ class MeetingProofModel {
   late String saltedVectorHash;
   late String previousMeetingHash;
   late String signaturesJson;
+  String? ipfsCid;
 
   static MeetingProofModel fromDomain(
     MeetingProof proof, {
@@ -36,6 +37,7 @@ class MeetingProofModel {
     model.signaturesJson = jsonEncode(
       proof.signatures.map((signature) => signature.toJson()).toList(),
     );
+    model.ipfsCid = proof.ipfsCid;
     return model;
   }
 
@@ -54,6 +56,7 @@ class MeetingProofModel {
       saltedVectorHash: saltedVectorHash,
       previousMeetingHash: previousMeetingHash,
       signatures: signatures,
+      ipfsCid: ipfsCid,
     );
   }
 }

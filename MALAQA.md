@@ -531,6 +531,38 @@ Umgesetzt:
   - `liveness_guard_test.dart` mit Stream-aehnlicher Sequenz (neutral -> neutral -> smile).
   - bestehende Auth-/Meeting-Tests auf Liveness-Metadaten angepasst.
 
+### Milestone P: The IPFS Bridge (Option B)
+
+Status: `abgeschlossen (Local Mock + vorbereiteter HTTP-Pfad)`
+
+Umgesetzt:
+
+- Neue Dependencies:
+  - `http`
+  - `cid`
+- Domain-Erweiterung:
+  - neues Repository-Interface `IpfsRepository`.
+  - `MeetingProof` um optionales Feld `ipfsCid` erweitert (nicht Teil der signierten Canonical-Payloads).
+- Data-Erweiterung:
+  - `HttpIpfsRepository` mit:
+    - lokaler CID-Berechnung aus `canonicalJson()`
+    - Simulationsmodus (Option B, ohne API-Key)
+    - optionalem HTTP-Uploadpfad fuer spaeteren Realbetrieb
+    - klaren Fehlern bei Timeout/Client/Response-Format.
+- Sync-Orchestrierung:
+  - neuer `DecentralizedSyncService`:
+    - laedt lokale Proofs
+    - synchronisiert nur unsynced Eintraege (`ipfsCid == null`)
+    - persistiert die erhaltene CID in Isar.
+- Persistenz:
+  - Isar-Model `MeetingProofModel` um `ipfsCid` erweitert.
+  - Codegen aktualisiert (`meeting_proof_model.g.dart`).
+- DI/Wiring:
+  - `IpfsRepository` und `DecentralizedSyncService` im Service Locator registriert.
+- Tests erweitert:
+  - `test/ipfs_repository_test.dart`
+  - `test/decentralized_sync_service_test.dart`
+
 ### Implementierungsstand nach Modulen (Detail)
 
 `lib/core/`:
@@ -563,6 +595,7 @@ Umgesetzt:
 - `lib/domain/services/chain_manager.dart`: Genesis-Regel + Link-Validierung + Proof-Validierung fuer die gesamte Kette umgesetzt.
 - `lib/domain/services/face_matcher_service.dart`: Cosine Similarity und Match-Entscheidung umgesetzt.
 - `lib/domain/services/statistics_service.dart`: Distanz-, Unique-People- und Streak-Berechnung fuer Gamification/Profile.
+- `lib/domain/services/decentralized_sync_service.dart`: synchronisiert unsynced lokale Proofs Richtung IPFS und schreibt `ipfsCid` zurueck.
 
 `lib/domain/gamification/`:
 
@@ -581,6 +614,7 @@ Umgesetzt:
 
 - `lib/domain/repositories/identity_repository.dart`: Abstraktion fuer sichere Identity-Persistenz vorhanden.
 - `lib/domain/repositories/chain_repository.dart`: Abstraktion fuer Proof-Chain Persistenz vorhanden.
+- `lib/domain/repositories/ipfs_repository.dart`: Abstraktion fuer dezentrale Proof-Uploads (CID-basierter Storage) vorhanden.
 
 `lib/domain/use_cases/`:
 
@@ -605,6 +639,8 @@ Umgesetzt:
 - `test/proof_importer_test.dart`: QR-Importkern mit Validierung und Duplikat-Erkennung.
 - `test/proximity_cubit_test.dart`: Auto-Discovery Logik (Payload-Match vs. stille Verwerfung).
 - `test/liveness_guard_test.dart`: Liveness-Challenge Sequenztest fuer Anti-Spoofing.
+- `test/ipfs_repository_test.dart`: canonical JSON + CID-Berechnung + Timeout-Fehlerpfad fuer IPFS-Bridge.
+- `test/decentralized_sync_service_test.dart`: Sync-Flow fuer unsynced Proofs inkl. Erfolgs-/Fehlerpfad.
 
 `platform`:
 
@@ -812,6 +848,10 @@ Milestone N:
 Milestone O:
 
 - `abgeschlossen (MVP)` Liveness & Anti-Spoofing fuer Auth- und Meeting-Flow.
+
+Milestone P:
+
+- `abgeschlossen (Option B / Local Mock)` IPFS-Bridge inkl. CID-Berechnung, `ipfsCid`-Persistenz und vorbereiteter HTTP-Upload-Architektur.
 
 ---
 
