@@ -7,6 +7,10 @@ abstract class SecureKeyValueStore {
   });
 
   Future<String?> read({required String key});
+
+  Future<void> delete({required String key});
+
+  Future<void> deleteAll();
 }
 
 class FlutterSecureKeyValueStore implements SecureKeyValueStore {
@@ -27,5 +31,15 @@ class FlutterSecureKeyValueStore implements SecureKeyValueStore {
   @override
   Future<String?> read({required String key}) {
     return _storage.read(key: key);
+  }
+
+  @override
+  Future<void> delete({required String key}) {
+    return _storage.delete(key: key);
+  }
+
+  @override
+  Future<void> deleteAll() {
+    return _storage.deleteAll();
   }
 }

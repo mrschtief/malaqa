@@ -52,4 +52,16 @@ class HeadlessSecureStore implements SecureKeyValueStore {
     AppLogger.log('MOCK', 'Writing key "$key" to mock secure store');
     _values[key] = value;
   }
+
+  @override
+  Future<void> delete({required String key}) async {
+    AppLogger.log('MOCK', 'Deleting key "$key" from mock secure store');
+    _values.remove(key);
+  }
+
+  @override
+  Future<void> deleteAll() async {
+    AppLogger.log('MOCK', 'Deleting all keys from mock secure store');
+    _values.clear();
+  }
 }

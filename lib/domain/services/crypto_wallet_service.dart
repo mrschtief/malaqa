@@ -70,7 +70,7 @@ class CryptoWalletService {
 
     final privateKeyBytes = await identity.exportPrivateKeyBytes();
     final entropy = await _crypto.sha256(privateKeyBytes);
-    return Uint8List.fromList(entropy);
+    return Uint8List.fromList(entropy.sublist(0, 16));
   }
 
   Future<Uint8List> _normalizeToValidPrivateKey(Uint8List initialBytes) async {

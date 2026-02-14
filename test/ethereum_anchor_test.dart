@@ -47,6 +47,7 @@ void main() {
     expect(keyHexA, startsWith('0x'));
     expect(web3_crypto.strip0x(keyHexA).length, 64);
     expect(bip39.validateMnemonic(mnemonic), isTrue);
+    expect(mnemonic.split(' '), hasLength(12));
     expect(credentials.privateKey.length, 32);
   });
 

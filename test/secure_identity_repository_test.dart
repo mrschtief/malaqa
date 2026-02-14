@@ -16,6 +16,16 @@ class InMemorySecureStore implements SecureKeyValueStore {
   Future<void> write({required String key, required String value}) async {
     _values[key] = value;
   }
+
+  @override
+  Future<void> delete({required String key}) async {
+    _values.remove(key);
+  }
+
+  @override
+  Future<void> deleteAll() async {
+    _values.clear();
+  }
 }
 
 void main() {

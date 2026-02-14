@@ -31,6 +31,7 @@ dependencies:
   nearby_connections: ^4.3.0
   http: ^1.6.0
   cid: ^1.0.1
+  shared_preferences: ^2.5.3
   web3dart: ^2.7.3
   bip39: ^1.0.6
 

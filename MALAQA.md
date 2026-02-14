@@ -590,6 +590,39 @@ Umgesetzt:
     - kryptografisch gueltige Signatur
     - Sender-Mocking und Simulationspfad.
 
+### Milestone R: The Grand Entrance (Onboarding & Settings)
+
+Status: `abgeschlossen (MVP)`
+
+Umgesetzt:
+
+- First-Run Gate:
+  - neues `AppSettingsService` (SharedPreferences-basiert) fuer `isFirstRun` und `nearbyVisibility`.
+  - `MalaqaApp` startet jetzt ueber einen Root-Gate:
+    - Erststart -> `OnboardingPage`
+    - danach -> `AuthPage`.
+- Onboarding:
+  - neue `OnboardingPage` mit 3 Slides (Identity, Chain, Permissions) und `Initiiere Protokoll`-CTA.
+  - sequentielle Permission-Abfrage fuer Kamera, Standort und Nearby/Bluetooth.
+  - Abschluss wird im Settings-Service persistiert und geloggt.
+- Settings Vault:
+  - neue `SettingsPage` mit Bereichen:
+    - Account: `Backup Identity` (Recovery Phrase anzeigen, mit Warnhinweis).
+    - Privacy: `Nearby Visibility` Toggle.
+    - System: `Reset App` (Danger Zone).
+    - About: Versionstext.
+  - `ProfilePage` hat jetzt ein Gear-Icon als Einstieg in Settings.
+- Nearby Visibility Wiring:
+  - `AuthPage` respektiert den Toggle:
+    - Discovery/Advertising nur wenn `nearbyVisibility = true`.
+    - bei deaktiviertem Toggle werden Proximity-Flows sauber gestoppt.
+- Reset Flow:
+  - loescht lokale Isar-Proofs und SecureStorage-Keys.
+  - setzt App-Settings auf Erststart zurueck.
+  - fuehrt den User wieder in den First-Run-Zustand.
+- Testabdeckung:
+  - neues `test/app_settings_service_test.dart` fuer First-Run/Toggle/Reset-Persistenz.
+
 ### Implementierungsstand nach Modulen (Detail)
 
 `lib/core/`:
@@ -599,6 +632,7 @@ Umgesetzt:
 - `lib/core/identity.dart`: Key-Pair-Erzeugung und Signieren ueber gekapselten Private Key ist umgesetzt.
 - `lib/core/di/service_locator.dart`: DI-Setup mit Lazy Singletons inkl. Camera Scanner Registrierung ist umgesetzt.
 - `lib/core/utils/image_converter.dart`: Kameraformat-Konvertierung, Crop und Modell-Preprocessing ist umgesetzt.
+- `lib/core/services/app_settings_service.dart`: persistiert First-Run und Nearby-Sichtbarkeit fuer Onboarding/Settings.
 
 `lib/data/`:
 
@@ -672,6 +706,7 @@ Umgesetzt:
 - `test/ipfs_repository_test.dart`: canonical JSON + CID-Berechnung + Timeout-Fehlerpfad fuer IPFS-Bridge.
 - `test/decentralized_sync_service_test.dart`: Sync-Flow fuer unsynced Proofs inkl. Erfolgs-/Fehlerpfad.
 - `test/ethereum_anchor_test.dart`: Wallet-Derivation, offline-signing und Anchor-TX-Data-Verifikation.
+- `test/app_settings_service_test.dart`: Persistenztests fuer Onboarding- und Settings-Flags.
 
 `platform`:
 
@@ -887,6 +922,10 @@ Milestone P:
 Milestone Q:
 
 - `abgeschlossen (MVP, offline-signing)` Blockchain-Anchor-Layer mit Ethereum-kompatibler Wallet-Ableitung und vorbereiteter TX-Broadcast-Schnittstelle.
+
+Milestone R:
+
+- `abgeschlossen (MVP)` First-Run-Onboarding, Settings-Vault und kontrollierbarer Nearby-Visibility-/Reset-Flow.
 
 ---
 

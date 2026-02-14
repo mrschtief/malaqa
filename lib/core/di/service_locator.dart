@@ -3,6 +3,7 @@ import 'package:get_it/get_it.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../services/app_settings_service.dart';
 import '../../data/datasources/secure_key_value_store.dart';
 import '../../data/datasources/tflite_biometric_scanner.dart';
 import '../../data/datasources/nearby_service.dart';
@@ -45,6 +46,7 @@ Future<void> configureDependencies({
   bool enablePersistence = true,
   Isar? isarOverride,
   SecureKeyValueStore? secureStoreOverride,
+  AppSettingsService? appSettingsOverride,
 }) async {
   if (reset) {
     await getIt.reset();
@@ -129,6 +131,13 @@ Future<void> configureDependencies({
       getIt.registerLazySingleton<IdentityRepository>(
         () => SecureIdentityRepository(getIt<SecureKeyValueStore>()),
       );
+    }
+  }
+
+  if (enablePersistence || appSettingsOverride != null) {
+    final appSettings = appSettingsOverride ?? await AppSettingsService.load();
+    if (!getIt.isRegistered<AppSettingsService>()) {
+      getIt.registerSingleton<AppSettingsService>(appSettings);
     }
   }
 

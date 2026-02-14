@@ -9,6 +9,8 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/di/service_locator.dart';
+import '../../core/services/app_settings_service.dart';
+import '../../core/utils/app_logger.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
 import '../blocs/auth/auth_cubit.dart';
 import '../blocs/meeting/meeting_cubit.dart';
@@ -30,6 +32,7 @@ class _AuthPageState extends State<AuthPage>
   CameraController? _cameraController;
   late final FaceDetector _faceDetector;
   late final AnimationController _reticlePulseController;
+  late final AppSettingsService _appSettings;
 
   bool _isCameraReady = false;
   bool _isProcessingFrame = false;
@@ -47,6 +50,8 @@ class _AuthPageState extends State<AuthPage>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
+    _appSettings = getIt<AppSettingsService>()
+      ..addListener(_handleAppSettingsChanged);
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
         performanceMode: FaceDetectorMode.fast,
@@ -299,8 +304,35 @@ class _AuthPageState extends State<AuthPage>
     }
   }
 
+  Future<void> _syncProximityForAuth(AuthAuthenticated state) async {
+    if (_appSettings.nearbyVisibility) {
+      await context.read<ProximityCubit>().setAuthenticated(
+            userName: state.identity.name,
+            ownerVector: state.ownerVector,
+          );
+      return;
+    }
+    AppLogger.log(
+      'PROXIMITY',
+      'Nearby visibility disabled; discovery/advertising remains off',
+    );
+    await context.read<ProximityCubit>().clearAuthentication();
+  }
+
+  void _handleAppSettingsChanged() {
+    if (!mounted) {
+      return;
+    }
+    final state = context.read<AuthCubit>().state;
+    if (state is! AuthAuthenticated) {
+      return;
+    }
+    unawaited(_syncProximityForAuth(state));
+  }
+
   @override
   void dispose() {
+    _appSettings.removeListener(_handleAppSettingsChanged);
     _reticlePulseController.dispose();
     final controller = _cameraController;
     if (controller != null) {
@@ -324,12 +356,7 @@ class _AuthPageState extends State<AuthPage>
                 identity: state.identity,
                 ownerVector: state.ownerVector,
               );
-          unawaited(
-            context.read<ProximityCubit>().setAuthenticated(
-                  userName: state.identity.name,
-                  ownerVector: state.ownerVector,
-                ),
-          );
+          unawaited(_syncProximityForAuth(state));
           return;
         }
         context.read<MeetingCubit>().clearAuthentication();
@@ -341,12 +368,19 @@ class _AuthPageState extends State<AuthPage>
             if (meetingState is! MeetingSuccess) {
               return;
             }
-            unawaited(
-              context.read<ProximityCubit>().advertiseMeeting(
-                    proof: meetingState.proof,
-                    guestVector: meetingState.guestVector,
-                  ),
-            );
+            if (_appSettings.nearbyVisibility) {
+              unawaited(
+                context.read<ProximityCubit>().advertiseMeeting(
+                      proof: meetingState.proof,
+                      guestVector: meetingState.guestVector,
+                    ),
+              );
+            } else {
+              AppLogger.log(
+                'PROXIMITY',
+                'Advertising skipped because nearby visibility is disabled',
+              );
+            }
             showModalBottomSheet<void>(
               context: context,
               isDismissible: false,
