@@ -7,3 +7,6 @@ export 'domain/entities/meeting_proof.dart';
 export 'domain/entities/participant_signature.dart';
 export 'domain/services/chain_manager.dart';
 export 'domain/services/meeting_handshake_service.dart';
+export 'domain/use_cases/create_meeting_proof_use_case.dart';
+export 'domain/use_cases/validate_chain_use_case.dart';
+export 'domain/use_cases/verify_meeting_proof_use_case.dart';

@@ -82,6 +82,21 @@ Umgesetzt:
   - `canonicalJson()`
   - stabil bei unterschiedlicher Signatur-Reihenfolge.
 
+### Milestone B: Domain UseCases als explizite Klassen
+
+Status: `abgeschlossen`
+
+Umgesetzt:
+
+- Neue UseCases:
+  - `CreateMeetingProofUseCase`
+  - `VerifyMeetingProofUseCase`
+  - `ValidateChainUseCase`
+- Eigene Test-Suite `test/domain_use_cases_test.dart` mit:
+  - validem Create+Verify Flow
+  - Manipulationsfall fuer Verify
+  - validierter und gebrochener Chain-Fall fuer Validate
+
 ## 5. Zielarchitektur (Roadmap)
 
 ### Phase 1: Mirror POC (Flutter + On-Device Face Pipeline)
@@ -186,7 +201,7 @@ Milestone A:
 
 Milestone B:
 
-- Domain-UseCases als explizite Klassen (CreateMeetingProof, VerifyMeetingProof, ValidateChain).
+- `abgeschlossen` Domain-UseCases als explizite Klassen (CreateMeetingProof, VerifyMeetingProof, ValidateChain).
 
 Milestone C:
 
