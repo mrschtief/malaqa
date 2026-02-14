@@ -7,6 +7,7 @@ Thumbs.db
 .idea/
 .vscode/
 flutter_*.log
+libisar.so
 
 # Dart / Flutter build outputs
 .dart_tool/

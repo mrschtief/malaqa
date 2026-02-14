@@ -4,7 +4,7 @@ import 'package:malaqa/malaqa.dart';
 
 void main() {
   test('configureDependencies registers lazy singletons', () async {
-    await configureDependencies(reset: true);
+    await configureDependencies(reset: true, enablePersistence: false);
 
     final cryptoA = getIt<CryptoProvider>();
     final cryptoB = getIt<CryptoProvider>();

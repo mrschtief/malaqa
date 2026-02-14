@@ -196,6 +196,45 @@ Umgesetzt:
 - Tests:
   - `test/image_converter_test.dart` fuer Preprocessing (Laenge + Normalisierung)
 
+### Milestone G: Persistence & Secure Storage
+
+Status: `abgeschlossen`
+
+Umgesetzt:
+
+- Neue Dependencies:
+  - `flutter_secure_storage`
+  - `isar`
+  - `isar_flutter_libs`
+  - `path_provider`
+  - `build_runner` + `isar_generator` (dev)
+- Secure Identity Storage:
+  - Domain Interface: `lib/domain/repositories/identity_repository.dart`
+  - Implementation: `lib/data/repositories/secure_identity_repository.dart`
+  - Key-Value Adapter: `lib/data/datasources/secure_key_value_store.dart`
+  - Private Key Bytes werden in `flutter_secure_storage` persistiert.
+  - Identity wird aus gespeicherten Key-Bytes rehydriert.
+- Chain Storage mit Isar:
+  - Isar Model: `lib/data/models/meeting_proof_model.dart`
+  - Codegen: `lib/data/models/meeting_proof_model.g.dart`
+  - Repository Interface: `lib/domain/repositories/chain_repository.dart`
+  - Repository Implementation: `lib/data/repositories/isar_chain_repository.dart`
+  - Integritaetscheck beim Laden:
+    - Signatur-Validierung
+    - Re-Hash gegen gespeicherten `proofHash`
+- Async DI Wiring:
+  - `lib/core/di/service_locator.dart` oeffnet `Isar` asynchron.
+  - Repositories werden im DI-Container registriert.
+- App Startup:
+  - `lib/main.dart` ruft `EnsureLocalIdentityUseCase` vor `runApp()` auf.
+  - Erste App-Ausfuehrung erzeugt lokale Identity und speichert sie sicher.
+  - Folgestarts laden dieselbe Identity wieder.
+- Tests:
+  - `test/secure_identity_repository_test.dart`
+  - `test/isar_chain_repository_test.dart`
+  - `test/image_converter_test.dart`
+  - Alle bestehenden Tests bleiben gruen.
+
 ### Implementierungsstand nach Modulen (Detail)
 
 `lib/core/`:
@@ -209,6 +248,10 @@ Umgesetzt:
 `lib/data/`:
 
 - `lib/data/datasources/tflite_biometric_scanner.dart`: Kamera-Frame + Face-Bounds -> echte MobileFaceNet Inferenz -> `FaceVector`.
+- `lib/data/datasources/secure_key_value_store.dart`: Secure Storage Adapter fuer sensible Schluesseldaten.
+- `lib/data/models/meeting_proof_model.dart`: Isar Datenmodell + Mapping zwischen DB und Domain.
+- `lib/data/repositories/secure_identity_repository.dart`: sichere Persistenz/Restore von Identity Keys.
+- `lib/data/repositories/isar_chain_repository.dart`: persistente Proof-Kette mit Integritaetsvalidierung beim Laden.
 
 `lib/domain/entities/`:
 
@@ -227,9 +270,15 @@ Umgesetzt:
 
 - `lib/domain/interfaces/biometric_scanner.dart`: Scanner-Interface inkl. `BiometricScanRequest` und `FaceBounds` vorhanden.
 
+`lib/domain/repositories/`:
+
+- `lib/domain/repositories/identity_repository.dart`: Abstraktion fuer sichere Identity-Persistenz vorhanden.
+- `lib/domain/repositories/chain_repository.dart`: Abstraktion fuer Proof-Chain Persistenz vorhanden.
+
 `lib/domain/use_cases/`:
 
 - `lib/domain/use_cases/create_meeting_proof_use_case.dart`: vorhanden.
+- `lib/domain/use_cases/ensure_local_identity_use_case.dart`: Startup-Bootstrap der lokalen Identity vorhanden.
 - `lib/domain/use_cases/verify_meeting_proof_use_case.dart`: vorhanden.
 - `lib/domain/use_cases/validate_chain_use_case.dart`: vorhanden.
 
@@ -239,6 +288,8 @@ Umgesetzt:
 - `test/domain_use_cases_test.dart`: Milestone-B UseCase-Tests vorhanden.
 - `test/face_matcher_service_test.dart`: Milestone-D Mathematik- und Schwellwerttests vorhanden.
 - `test/image_converter_test.dart`: Preprocessing und Normalisierungslogik vorhanden.
+- `test/secure_identity_repository_test.dart`: Speichern/Laden der Identity ueber Secure Storage Repository vorhanden.
+- `test/isar_chain_repository_test.dart`: Isar Persistenz + Integritaetsfilterung bei Manipulation vorhanden.
 - `test/service_locator_test.dart`: Milestone-C DI-Registrierung und Lazy-Singleton-Verhalten vorhanden.
 - `test/widget_test.dart`: Flutter Test-Skeleton vorhanden.
 
@@ -346,9 +397,9 @@ Offen und konkret noch zu bauen:
 
 `Phase 3 / Lokale Persistenz und Visualisierung`:
 
-- Persistenzschema fuer Proofs festlegen.
-- Repository-Layer fuer Schreiben/Lesen der Chain implementieren.
+- Repository-Abfragen erweitern (Filter/Sort/Paging).
 - Timeline/Graph Darstellung in der App aufbauen.
+- Migration/Schema-Strategie fuer kuenftige Datenmodell-Aenderungen definieren.
 
 `Security-Haertung`:
 
@@ -406,7 +457,11 @@ Milestone F:
 
 Milestone G:
 
-- Persistenzadapter fuer lokale Chain-Speicherung mit Integritaetschecks.
+- `abgeschlossen` Persistence & Secure Storage (Secure Identity + Isar Chain Repository + Integritaetschecks).
+
+Milestone H:
+
+- Proof-Timeline UI + persistente Chain-Ansichten in der App.
 
 ---
 

@@ -1,5 +1,5 @@
 import 'package:malaqa/malaqa.dart';
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 List<double> vectorFor(int seed) {
   return List<double>.generate(

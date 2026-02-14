@@ -26,7 +26,24 @@ class Identity {
     );
   }
 
+  static Future<Identity> fromPrivateKeyBytes({
+    required String name,
+    required List<int> privateKeyBytes,
+  }) async {
+    final keyPair = await _ed25519.newKeyPairFromSeed(privateKeyBytes);
+    final publicKey = await keyPair.extractPublicKey();
+    return Identity._(
+      name: name,
+      publicKey: publicKey.bytes,
+      keyPair: keyPair,
+    );
+  }
+
   String get publicKeyHex => bytesToHex(publicKey);
+
+  Future<List<int>> exportPrivateKeyBytes() async {
+    return (await _keyPair.extractPrivateKeyBytes()).toList(growable: false);
+  }
 
   Future<List<int>> signPayload({
     required List<int> payload,
@@ -38,3 +55,5 @@ class Identity {
     );
   }
 }
+
+typedef Ed25519Identity = Identity;
