@@ -13,8 +13,10 @@ dependencies:
     sdk: flutter
   get_it: ^8.0.3
   google_mlkit_face_detection: ^0.13.2
+  image: ^4.7.2
   json_annotation: ^4.9.0
   permission_handler: ^12.0.1
+  tflite_flutter: ^0.12.1
 
 dev_dependencies:
   flutter_test:
@@ -24,3 +26,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/models/mobilefacenet.tflite

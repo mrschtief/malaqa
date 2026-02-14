@@ -1,7 +1,7 @@
 import 'package:camera/camera.dart';
 import 'package:get_it/get_it.dart';
 
-import '../../data/datasources/camera_biometric_scanner.dart';
+import '../../data/datasources/tflite_biometric_scanner.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
 import '../../domain/services/chain_manager.dart';
 import '../../domain/services/face_matcher_service.dart';
@@ -50,9 +50,11 @@ Future<void> configureDependencies({bool reset = false}) async {
   if (!getIt.isRegistered<FaceMatcherService>()) {
     getIt.registerLazySingleton<FaceMatcherService>(FaceMatcherService.new);
   }
-  if (!getIt.isRegistered<BiometricScanner<CameraImage>>()) {
-    getIt.registerLazySingleton<BiometricScanner<CameraImage>>(
-      CameraBiometricScanner.new,
+  if (!getIt
+      .isRegistered<BiometricScanner<BiometricScanRequest<CameraImage>>>()) {
+    getIt.registerLazySingleton<
+        BiometricScanner<BiometricScanRequest<CameraImage>>>(
+      TfliteBiometricScanner.new,
     );
   }
 }

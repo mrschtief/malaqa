@@ -155,11 +155,6 @@ Umgesetzt:
   - Face Bounding Box Overlay
   - Button `Scan Me`
   - Statusanzeige (`Similarity: 0.0` Basisfluss)
-- Data-Layer Scanner-Implementierung:
-  - `lib/data/datasources/camera_biometric_scanner.dart`
-  - implementiert `BiometricScanner<CameraImage>`
-  - liefert fuer Milestone E einen Dummy-Embedding-Vector (512)
-  - markierter TODO fuer spaeteren TFLite-Inference-Call
 - DI-Wiring fuer Scanner:
   - Registrierung als Lazy Singleton in `lib/core/di/service_locator.dart`
 - App-Wiring:
@@ -167,6 +162,39 @@ Umgesetzt:
 - Mobile Permissions gesetzt:
   - Android: `android/app/src/main/AndroidManifest.xml` mit `CAMERA`
   - iOS: `ios/Runner/Info.plist` mit `NSCameraUsageDescription`
+
+### Milestone F: Real TFLite Integration (MobileFaceNet)
+
+Status: `abgeschlossen`
+
+Umgesetzt:
+
+- Neue Dependencies:
+  - `tflite_flutter`
+  - `image`
+- Modell-Asset registriert:
+  - `assets/models/mobilefacenet.tflite` in `pubspec.yaml`
+- Bildkonvertierung + Preprocessing:
+  - `lib/core/utils/image_converter.dart`
+  - YUV420/BGRA8888 -> RGB
+  - Rotation angewandt
+  - Crop via Face Bounding Box
+  - Resize auf 112x112
+  - Normalisierung `(pixel - 128) / 128.0`
+- Echter TFLite Scanner:
+  - `lib/data/datasources/tflite_biometric_scanner.dart`
+  - lazy Interpreter Load via `Interpreter.fromAsset(...)`
+  - `InterpreterOptions` mit `threads = 4`
+  - Inferenz-Output wird zu `FaceVector` gemappt
+- Domain Interface erweitert:
+  - `BiometricScanRequest<TImage>` + `FaceBounds`
+  - Scanner verarbeitet jetzt Bild + Bounding Box + Rotation
+- Mirror-Flow erweitert:
+  - 1. Klick: Referenzvektor A speichern
+  - 2. Klick: Vektor B erfassen und Similarity via `FaceMatcherService` berechnen
+  - UI zeigt den Similarity-Score inkl. Match-Ergebnis
+- Tests:
+  - `test/image_converter_test.dart` fuer Preprocessing (Laenge + Normalisierung)
 
 ### Implementierungsstand nach Modulen (Detail)
 
@@ -176,10 +204,11 @@ Umgesetzt:
 - `lib/core/crypto/ed25519_crypto_provider.dart`: konkrete Implementierung fuer Ed25519 + SHA-256 + Utility-Funktionen ist umgesetzt.
 - `lib/core/identity.dart`: Key-Pair-Erzeugung und Signieren ueber gekapselten Private Key ist umgesetzt.
 - `lib/core/di/service_locator.dart`: DI-Setup mit Lazy Singletons inkl. Camera Scanner Registrierung ist umgesetzt.
+- `lib/core/utils/image_converter.dart`: Kameraformat-Konvertierung, Crop und Modell-Preprocessing ist umgesetzt.
 
 `lib/data/`:
 
-- `lib/data/datasources/camera_biometric_scanner.dart`: Kamera-Frame zu Dummy-Embedding Pipeline (TFLite-ready Skeleton) ist umgesetzt.
+- `lib/data/datasources/tflite_biometric_scanner.dart`: Kamera-Frame + Face-Bounds -> echte MobileFaceNet Inferenz -> `FaceVector`.
 
 `lib/domain/entities/`:
 
@@ -196,7 +225,7 @@ Umgesetzt:
 
 `lib/domain/interfaces/`:
 
-- `lib/domain/interfaces/biometric_scanner.dart`: generisches Scanner-Interface als Adaptergrenze vorhanden.
+- `lib/domain/interfaces/biometric_scanner.dart`: Scanner-Interface inkl. `BiometricScanRequest` und `FaceBounds` vorhanden.
 
 `lib/domain/use_cases/`:
 
@@ -209,6 +238,7 @@ Umgesetzt:
 - `test/magellan_core_test.dart`: Phase-0 Kernlogik sowie Milestone-A-Tests vorhanden.
 - `test/domain_use_cases_test.dart`: Milestone-B UseCase-Tests vorhanden.
 - `test/face_matcher_service_test.dart`: Milestone-D Mathematik- und Schwellwerttests vorhanden.
+- `test/image_converter_test.dart`: Preprocessing und Normalisierungslogik vorhanden.
 - `test/service_locator_test.dart`: Milestone-C DI-Registrierung und Lazy-Singleton-Verhalten vorhanden.
 - `test/widget_test.dart`: Flutter Test-Skeleton vorhanden.
 
@@ -305,8 +335,8 @@ Offen und konkret noch zu bauen:
 `Phase 1 / Face Pipeline`:
 
 - ML Kit Detection aus `MirrorPage` in einen separaten Data Adapter extrahieren.
-- Echten Embedding-Extractor per TFLite (MobileFaceNet) implementieren.
-- `Scan Me` mit echter Vergleichslogik gegen gespeicherten Referenzvektor verdrahten.
+- TFLite-Pipeline mit robustem Fehlerhandling (Model load/inference fallback) haerten.
+- Optionale Liveness-Pruefung vor Embedding-Erzeugung integrieren.
 
 `Phase 2 / Lokaler Handshake ueber zwei Geraete`:
 
@@ -371,6 +401,10 @@ Milestone E:
 - `abgeschlossen` Mirror Loop (Kamera-Preview, Face Detection Overlay, Scanner-Wiring, Permission Setup).
 
 Milestone F:
+
+- `abgeschlossen` Real TFLite Integration (Image Converter, MobileFaceNet Inference, Match-Flow im UI).
+
+Milestone G:
 
 - Persistenzadapter fuer lokale Chain-Speicherung mit Integritaetschecks.
 

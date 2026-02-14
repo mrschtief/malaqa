@@ -9,7 +9,7 @@ Flutter + Dart core project for the `malaqa` decentralized meeting chain protoco
 - Meeting proof creation and verification
 - Chain validation across linked proofs
 - Flutter mirror loop with camera preview and ML Kit face detection overlay
-- Dummy camera biometric scanner flow (`Scan Me` -> vector generated)
+- Real TFLite biometric scanner flow (`Scan Me` -> vector + similarity)
 
 ## Structure
 
@@ -18,6 +18,8 @@ Flutter + Dart core project for the `malaqa` decentralized meeting chain protoco
 - `lib/domain/entities/`: `FaceVector`, `MeetingProof`, signatures, location
 - `lib/domain/services/`: handshake, chain validation, face matching
 - `lib/presentation/pages/mirror_page.dart`: camera mirror POC screen
+- `lib/data/datasources/tflite_biometric_scanner.dart`: MobileFaceNet inference scanner
+- `lib/core/utils/image_converter.dart`: camera frame conversion and preprocessing
 - `test/magellan_core_test.dart`: TDD suite for core protocol behavior
 - `bin/main.dart`: CLI simulation (Alice -> Bob -> Charlie)
 
@@ -30,3 +32,7 @@ flutter run
 ```
 
 For camera testing, run on a real Android/iOS device.
+
+Model asset expected at:
+
+`assets/models/mobilefacenet.tflite`

@@ -7,7 +7,9 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/di/service_locator.dart';
+import '../../domain/entities/face_vector.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
+import '../../domain/services/face_matcher_service.dart';
 
 class MirrorPage extends StatefulWidget {
   const MirrorPage({super.key});
@@ -27,6 +29,7 @@ class _MirrorPageState extends State<MirrorPage> {
   CameraImage? _latestFrame;
   Rect? _latestFaceBox;
   Size? _latestImageSize;
+  FaceVector? _referenceVector;
   String _status = 'Similarity: 0.0';
 
   @override
@@ -199,18 +202,45 @@ class _MirrorPageState extends State<MirrorPage> {
       _status = 'Scanning...';
     });
 
-    final scanner = getIt<BiometricScanner<CameraImage>>();
-    final vector = await scanner.captureFace(frame);
+    final scanner =
+        getIt<BiometricScanner<BiometricScanRequest<CameraImage>>>();
+    final vector = await scanner.captureFace(
+      BiometricScanRequest<CameraImage>(
+        image: frame,
+        faceBounds: FaceBounds(
+          left: _latestFaceBox!.left,
+          top: _latestFaceBox!.top,
+          right: _latestFaceBox!.right,
+          bottom: _latestFaceBox!.bottom,
+        ),
+        rotationDegrees: _cameraController!.description.sensorOrientation,
+        isFrontCamera: _cameraController!.description.lensDirection ==
+            CameraLensDirection.front,
+      ),
+    );
 
     if (!mounted) {
       return;
     }
 
+    String nextStatus;
+    if (vector == null) {
+      nextStatus = 'No vector generated';
+    } else if (_referenceVector == null) {
+      _referenceVector = vector;
+      nextStatus = 'Reference captured. Scan again for similarity.';
+    } else {
+      final faceMatcher = getIt<FaceMatcherService>();
+      final similarity = faceMatcher.compare(_referenceVector!, vector);
+      final isMatch = faceMatcher.isMatch(_referenceVector!, vector);
+      nextStatus =
+          'Similarity: ${similarity.toStringAsFixed(4)} | Match: ${isMatch ? 'yes' : 'no'}';
+      _referenceVector = null;
+    }
+
     setState(() {
       _isScanning = false;
-      _status = vector == null
-          ? 'No vector generated'
-          : 'Vector generated | Similarity: 0.0';
+      _status = nextStatus;
     });
 
     if (vector != null) {

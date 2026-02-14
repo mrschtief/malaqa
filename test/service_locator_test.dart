@@ -12,8 +12,10 @@ void main() {
     final handshakeB = getIt<MeetingHandshakeService>();
     final chainA = getIt<ChainManager>();
     final chainB = getIt<ChainManager>();
-    final scannerA = getIt<BiometricScanner<CameraImage>>();
-    final scannerB = getIt<BiometricScanner<CameraImage>>();
+    final scannerA =
+        getIt<BiometricScanner<BiometricScanRequest<CameraImage>>>();
+    final scannerB =
+        getIt<BiometricScanner<BiometricScanRequest<CameraImage>>>();
 
     expect(cryptoA, same(cryptoB));
     expect(handshakeA, same(handshakeB));
