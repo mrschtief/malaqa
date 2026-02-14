@@ -563,6 +563,33 @@ Umgesetzt:
   - `test/ipfs_repository_test.dart`
   - `test/decentralized_sync_service_test.dart`
 
+### Milestone Q: The Blockchain Anchor
+
+Status: `abgeschlossen (offline-signing MVP, no-gas mode)`
+
+Umgesetzt:
+
+- Neue Dependencies:
+  - `web3dart`
+  - `bip39`
+- Domain-Erweiterung:
+  - neues Repository-Interface `AnchorRepository` mit `anchorProof(String proofHash)`.
+- Wallet-Layer:
+  - `CryptoWalletService` leitet deterministisch aus der vorhandenen App-Identity (Ed25519-Secret) ein Ethereum-kompatibles Secp256k1-Keymaterial ab.
+  - Ableitung nutzt BIP39 (`entropy -> mnemonic -> seed`) und validiert den resultierenden Private Key gegen den Secp256k1-Range.
+- Ethereum-Anchor-Repository:
+  - `EthereumAnchorRepository` baut Anchor-Transaktionen, kodiert `proofHash` als `storeHash(bytes32)`-CallData und signiert offline.
+  - Simulation-Modus erzeugt lokal gueltigen TX-Hash ohne Netzwerkkosten.
+  - optionaler Sender-Hook erlaubt spaeteres echtes Broadcasting oder Test-Mocking.
+- DI/Wiring:
+  - `CryptoWalletService` und `AnchorRepository` im Service Locator registriert (standardmaessig `simulateOnly: true`).
+- Tests erweitert:
+  - `test/ethereum_anchor_test.dart` prueft:
+    - deterministische Wallet-Ableitung
+    - korrekte Hash-Kodierung in Transaction-Data
+    - kryptografisch gueltige Signatur
+    - Sender-Mocking und Simulationspfad.
+
 ### Implementierungsstand nach Modulen (Detail)
 
 `lib/core/`:
@@ -581,6 +608,7 @@ Umgesetzt:
 - `lib/data/models/meeting_proof_model.dart`: Isar Datenmodell + Mapping zwischen DB und Domain.
 - `lib/data/repositories/secure_identity_repository.dart`: sichere Persistenz/Restore von Identity Keys.
 - `lib/data/repositories/isar_chain_repository.dart`: persistente Proof-Kette mit Integritaetsvalidierung beim Laden.
+- `lib/data/repositories/ethereum_anchor_repository.dart`: Ethereum/Polygon Anchor-Layer mit offline signierten Transaktionen.
 
 `lib/domain/entities/`:
 
@@ -596,6 +624,7 @@ Umgesetzt:
 - `lib/domain/services/face_matcher_service.dart`: Cosine Similarity und Match-Entscheidung umgesetzt.
 - `lib/domain/services/statistics_service.dart`: Distanz-, Unique-People- und Streak-Berechnung fuer Gamification/Profile.
 - `lib/domain/services/decentralized_sync_service.dart`: synchronisiert unsynced lokale Proofs Richtung IPFS und schreibt `ipfsCid` zurueck.
+- `lib/domain/services/crypto_wallet_service.dart`: deterministic Key-Derivation fuer Ethereum-Credentials aus lokaler Identity.
 
 `lib/domain/gamification/`:
 
@@ -615,6 +644,7 @@ Umgesetzt:
 - `lib/domain/repositories/identity_repository.dart`: Abstraktion fuer sichere Identity-Persistenz vorhanden.
 - `lib/domain/repositories/chain_repository.dart`: Abstraktion fuer Proof-Chain Persistenz vorhanden.
 - `lib/domain/repositories/ipfs_repository.dart`: Abstraktion fuer dezentrale Proof-Uploads (CID-basierter Storage) vorhanden.
+- `lib/domain/repositories/anchor_repository.dart`: Abstraktion fuer Blockchain-Anchor-Operationen vorhanden.
 
 `lib/domain/use_cases/`:
 
@@ -641,6 +671,7 @@ Umgesetzt:
 - `test/liveness_guard_test.dart`: Liveness-Challenge Sequenztest fuer Anti-Spoofing.
 - `test/ipfs_repository_test.dart`: canonical JSON + CID-Berechnung + Timeout-Fehlerpfad fuer IPFS-Bridge.
 - `test/decentralized_sync_service_test.dart`: Sync-Flow fuer unsynced Proofs inkl. Erfolgs-/Fehlerpfad.
+- `test/ethereum_anchor_test.dart`: Wallet-Derivation, offline-signing und Anchor-TX-Data-Verifikation.
 
 `platform`:
 
@@ -852,6 +883,10 @@ Milestone O:
 Milestone P:
 
 - `abgeschlossen (Option B / Local Mock)` IPFS-Bridge inkl. CID-Berechnung, `ipfsCid`-Persistenz und vorbereiteter HTTP-Upload-Architektur.
+
+Milestone Q:
+
+- `abgeschlossen (MVP, offline-signing)` Blockchain-Anchor-Layer mit Ethereum-kompatibler Wallet-Ableitung und vorbereiteter TX-Broadcast-Schnittstelle.
 
 ---
 

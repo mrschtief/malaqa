@@ -9,13 +9,16 @@ import '../../data/datasources/nearby_service.dart';
 import '../../data/models/meeting_proof_model.dart';
 import '../../data/repositories/isar_chain_repository.dart';
 import '../../data/repositories/ipfs_repository.dart';
+import '../../data/repositories/ethereum_anchor_repository.dart';
 import '../../data/repositories/secure_identity_repository.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
 import '../../domain/gamification/badge_manager.dart';
 import '../../domain/repositories/chain_repository.dart';
 import '../../domain/repositories/identity_repository.dart';
 import '../../domain/repositories/ipfs_repository.dart';
+import '../../domain/repositories/anchor_repository.dart';
 import '../../domain/services/chain_manager.dart';
+import '../../domain/services/crypto_wallet_service.dart';
 import '../../domain/services/decentralized_sync_service.dart';
 import '../../domain/services/face_matcher_service.dart';
 import '../../domain/services/meeting_handshake_service.dart';
@@ -129,6 +132,17 @@ Future<void> configureDependencies({
     }
   }
 
+  if (getIt.isRegistered<IdentityRepository>() &&
+      getIt.isRegistered<CryptoProvider>() &&
+      !getIt.isRegistered<CryptoWalletService>()) {
+    getIt.registerLazySingleton<CryptoWalletService>(
+      () => CryptoWalletService(
+        identityRepository: getIt<IdentityRepository>(),
+        crypto: getIt<CryptoProvider>(),
+      ),
+    );
+  }
+
   if (getIt.isRegistered<Isar>() && !getIt.isRegistered<ChainRepository>()) {
     getIt.registerLazySingleton<ChainRepository>(
       () => IsarChainRepository(
@@ -150,6 +164,17 @@ Future<void> configureDependencies({
       () => DecentralizedSyncService(
         chainRepository: getIt<ChainRepository>(),
         ipfsRepository: getIt<IpfsRepository>(),
+      ),
+    );
+  }
+
+  if (getIt.isRegistered<CryptoWalletService>() &&
+      !getIt.isRegistered<AnchorRepository>()) {
+    getIt.registerLazySingleton<AnchorRepository>(
+      () => EthereumAnchorRepository(
+        rpcUrl: 'http://127.0.0.1:8545',
+        walletService: getIt<CryptoWalletService>(),
+        simulateOnly: true,
       ),
     );
   }
