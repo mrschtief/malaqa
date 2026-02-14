@@ -36,7 +36,8 @@ class MeetingHandshakeService {
     ]..sort((x, y) => x.$1.compareTo(y.$1));
 
     final combined = '${ordered[0].$2}|${ordered[1].$2}';
-    final saltedVectorHash = bytesToHex(await _crypto.sha256(combined.codeUnits));
+    final saltedVectorHash =
+        bytesToHex(await _crypto.sha256(combined.codeUnits));
 
     final proof = MeetingProof(
       timestamp: (timestamp ?? DateTime.now().toUtc()).toIso8601String(),

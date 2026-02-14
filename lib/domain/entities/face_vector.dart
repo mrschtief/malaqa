@@ -3,7 +3,8 @@ import '../../core/crypto/ed25519_crypto_provider.dart';
 class FaceVector {
   FaceVector(List<double> values) : values = List<double>.unmodifiable(values) {
     if (values.isEmpty) {
-      throw ArgumentError.value(values, 'values', 'FaceVector cannot be empty.');
+      throw ArgumentError.value(
+          values, 'values', 'FaceVector cannot be empty.');
     }
   }
 

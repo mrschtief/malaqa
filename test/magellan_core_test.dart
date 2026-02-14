@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:malaqa/malaqa.dart';
 import 'package:test/test.dart';
 
@@ -19,7 +21,8 @@ void main() {
     chainManager = ChainManager(crypto);
   });
 
-  test('Test 1: valid handshake between Alice and Bob verifies as true', () async {
+  test('Test 1: valid handshake between Alice and Bob verifies as true',
+      () async {
     final alice = await Identity.create(name: 'Alice');
     final bob = await Identity.create(name: 'Bob');
 
@@ -36,7 +39,8 @@ void main() {
     expect(await proof.verifyProof(crypto), isTrue);
   });
 
-  test('Test 2: tampering timestamp or location after signing fails verification',
+  test(
+      'Test 2: tampering timestamp or location after signing fails verification',
       () async {
     final alice = await Identity.create(name: 'Alice');
     final bob = await Identity.create(name: 'Bob');
@@ -105,5 +109,59 @@ void main() {
 
     expect(await chainManager.isValidChain(proofs), isTrue);
     expect(await chainManager.isValidChain(chainManager.chain), isTrue);
+  });
+
+  test('Milestone A: MeetingProof JSON roundtrip preserves verifiability',
+      () async {
+    final alice = await Identity.create(name: 'Alice');
+    final bob = await Identity.create(name: 'Bob');
+
+    final original = await handshake.createProof(
+      participantA: alice,
+      participantB: bob,
+      vectorA: FaceVector(vectorFor(21)),
+      vectorB: FaceVector(vectorFor(22)),
+      location: const LocationPoint(latitude: 52.52, longitude: 13.405),
+      previousMeetingHash: '0000',
+      timestamp: DateTime.utc(2026, 2, 14, 15, 10, 0),
+    );
+
+    final encoded = jsonEncode(original.toJson());
+    final decoded = jsonDecode(encoded) as Map<String, dynamic>;
+    final restored = MeetingProof.fromJson(decoded);
+
+    expect(restored.timestamp, equals(original.timestamp));
+    expect(restored.location.latitude, equals(original.location.latitude));
+    expect(restored.location.longitude, equals(original.location.longitude));
+    expect(restored.saltedVectorHash, equals(original.saltedVectorHash));
+    expect(restored.previousMeetingHash, equals(original.previousMeetingHash));
+    expect(restored.signatures.length, equals(original.signatures.length));
+    expect(await restored.verifyProof(crypto), isTrue);
+  });
+
+  test('Milestone A: canonical encoding is deterministic for signature order',
+      () async {
+    final proof = MeetingProof(
+      timestamp: DateTime.utc(2026, 2, 14, 12, 30, 0).toIso8601String(),
+      location: const LocationPoint(latitude: 1.2345, longitude: 6.789),
+      saltedVectorHash:
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      previousMeetingHash: '0000',
+      signatures: const [
+        ParticipantSignature(publicKeyHex: 'bb', signatureHex: '22'),
+        ParticipantSignature(publicKeyHex: 'aa', signatureHex: '11'),
+      ],
+    );
+
+    final reversed = MeetingProof(
+      timestamp: proof.timestamp,
+      location: proof.location,
+      saltedVectorHash: proof.saltedVectorHash,
+      previousMeetingHash: proof.previousMeetingHash,
+      signatures: proof.signatures.reversed.toList(),
+    );
+
+    expect(proof.canonicalProof(), equals(reversed.canonicalProof()));
+    expect(proof.canonicalJson(), equals(reversed.canonicalJson()));
   });
 }

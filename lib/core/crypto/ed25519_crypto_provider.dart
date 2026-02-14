@@ -6,8 +6,7 @@ import 'package:cryptography/cryptography.dart';
 import '../interfaces/crypto_provider.dart';
 
 class Ed25519CryptoProvider implements CryptoProvider {
-  Ed25519CryptoProvider({Random? random})
-      : _random = random ?? Random.secure();
+  Ed25519CryptoProvider({Random? random}) : _random = random ?? Random.secure();
 
   final Random _random;
   final _ed25519 = Ed25519();

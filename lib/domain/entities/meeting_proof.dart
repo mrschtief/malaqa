@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../core/crypto/ed25519_crypto_provider.dart';
 import '../../core/interfaces/crypto_provider.dart';
 import 'location_point.dart';
@@ -18,6 +20,29 @@ class MeetingProof {
   final String previousMeetingHash;
   final List<ParticipantSignature> signatures;
 
+  Map<String, dynamic> toJson() {
+    return {
+      'timestamp': timestamp,
+      'location': location.toJson(),
+      'saltedVectorHash': saltedVectorHash,
+      'previousMeetingHash': previousMeetingHash,
+      'signatures': signatures.map((s) => s.toJson()).toList(),
+    };
+  }
+
+  factory MeetingProof.fromJson(Map<String, dynamic> json) {
+    return MeetingProof(
+      timestamp: json['timestamp'] as String,
+      location:
+          LocationPoint.fromJson(json['location'] as Map<String, dynamic>),
+      saltedVectorHash: json['saltedVectorHash'] as String,
+      previousMeetingHash: json['previousMeetingHash'] as String,
+      signatures: (json['signatures'] as List<dynamic>)
+          .map((s) => ParticipantSignature.fromJson(s as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
   String canonicalPayload() {
     return [
       timestamp,
@@ -32,6 +57,22 @@ class MeetingProof {
       ..sort((a, b) => a.publicKeyHex.compareTo(b.publicKeyHex));
     final sigPart = sortedSigs.map((s) => s.toCanonicalString()).join('|');
     return '${canonicalPayload()}|$sigPart';
+  }
+
+  String canonicalJson() {
+    final sortedSigs = [...signatures]
+      ..sort((a, b) => a.publicKeyHex.compareTo(b.publicKeyHex));
+    final canonical = <String, dynamic>{
+      'timestamp': timestamp,
+      'location': <String, double>{
+        'latitude': location.latitude,
+        'longitude': location.longitude,
+      },
+      'saltedVectorHash': saltedVectorHash,
+      'previousMeetingHash': previousMeetingHash,
+      'signatures': sortedSigs.map((s) => s.toJson()).toList(),
+    };
+    return jsonEncode(canonical);
   }
 
   Future<String> computeProofHash(CryptoProvider crypto) async {

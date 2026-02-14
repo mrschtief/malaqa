@@ -66,6 +66,22 @@ Umgesetzt:
   - Alice -> Bob -> Charlie
   - Chain-Validierung in Konsole
 
+### Milestone A: API-Haertung fuer MeetingProof
+
+Status: `abgeschlossen`
+
+Umgesetzt:
+
+- `toJson/fromJson` fuer:
+  - `MeetingProof`
+  - `LocationPoint`
+  - `ParticipantSignature`
+- JSON-Roundtrip-Test fuer `MeetingProof` (inkl. Signatur-Verifizierbarkeit nach Roundtrip).
+- Deterministische kanonische Encodierung:
+  - `canonicalProof()`
+  - `canonicalJson()`
+  - stabil bei unterschiedlicher Signatur-Reihenfolge.
+
 ## 5. Zielarchitektur (Roadmap)
 
 ### Phase 1: Mirror POC (Flutter + On-Device Face Pipeline)
@@ -166,7 +182,7 @@ Definition of Done pro Schritt:
 
 Milestone A:
 
-- API-Haertung fuer `MeetingProof` Serialisierung (JSON roundtrip + canonical encoding tests).
+- `abgeschlossen` API-Haertung fuer `MeetingProof` Serialisierung (JSON roundtrip + canonical encoding tests).
 
 Milestone B:
 
