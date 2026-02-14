@@ -10,6 +10,7 @@ import '../../core/di/service_locator.dart';
 import '../../domain/entities/face_vector.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
 import '../../domain/services/face_matcher_service.dart';
+import '../../domain/services/meeting_participant_resolver.dart';
 
 class MirrorPage extends StatefulWidget {
   const MirrorPage({super.key});
@@ -27,10 +28,11 @@ class _MirrorPageState extends State<MirrorPage> {
   bool _isScanning = false;
 
   CameraImage? _latestFrame;
-  Rect? _latestFaceBox;
+  List<Rect> _latestFaceBoxes = const <Rect>[];
   Size? _latestImageSize;
-  FaceVector? _referenceVector;
-  String _status = 'Similarity: 0.0';
+  FaceVector? _ownerReferenceVector;
+  String _status =
+      'Ready: capture owner first, then scan with two people in frame.';
 
   @override
   void initState() {
@@ -90,7 +92,8 @@ class _MirrorPageState extends State<MirrorPage> {
     setState(() {
       _cameraController = controller;
       _isCameraReady = true;
-      _status = 'Similarity: 0.0';
+      _status =
+          'Ready: capture owner first, then scan with two people in frame.';
     });
   }
 
@@ -112,8 +115,12 @@ class _MirrorPageState extends State<MirrorPage> {
       if (!mounted) {
         return;
       }
+      final sortedBoxes = faces.map((face) => face.boundingBox).toList()
+        ..sort(
+          (a, b) => (b.width * b.height).compareTo(a.width * a.height),
+        );
       setState(() {
-        _latestFaceBox = faces.isNotEmpty ? faces.first.boundingBox : null;
+        _latestFaceBoxes = List<Rect>.unmodifiable(sortedBoxes);
       });
     } catch (error) {
       debugPrint('Frame processing failed: $error');
@@ -178,6 +185,14 @@ class _MirrorPageState extends State<MirrorPage> {
   }
 
   Future<void> _scanMe() async {
+    if (_ownerReferenceVector == null) {
+      await _captureOwnerReference();
+      return;
+    }
+    await _scanDuoMeeting();
+  }
+
+  Future<void> _captureOwnerReference() async {
     if (_isScanning) {
       return;
     }
@@ -190,7 +205,7 @@ class _MirrorPageState extends State<MirrorPage> {
       return;
     }
 
-    if (_latestFaceBox == null) {
+    if (_latestFaceBoxes.isEmpty) {
       setState(() {
         _status = 'No face detected';
       });
@@ -199,23 +214,15 @@ class _MirrorPageState extends State<MirrorPage> {
 
     setState(() {
       _isScanning = true;
-      _status = 'Scanning...';
+      _status = 'Capturing owner reference...';
     });
 
     final scanner =
         getIt<BiometricScanner<BiometricScanRequest<CameraImage>>>();
     final vector = await scanner.captureFace(
-      BiometricScanRequest<CameraImage>(
-        image: frame,
-        faceBounds: FaceBounds(
-          left: _latestFaceBox!.left,
-          top: _latestFaceBox!.top,
-          right: _latestFaceBox!.right,
-          bottom: _latestFaceBox!.bottom,
-        ),
-        rotationDegrees: _cameraController!.description.sensorOrientation,
-        isFrontCamera: _cameraController!.description.lensDirection ==
-            CameraLensDirection.front,
+      _scanRequest(
+        frame,
+        faceBounds: _faceBoundsFromRect(_latestFaceBoxes.first),
       ),
     );
 
@@ -223,29 +230,143 @@ class _MirrorPageState extends State<MirrorPage> {
       return;
     }
 
-    String nextStatus;
     if (vector == null) {
-      nextStatus = 'No vector generated';
-    } else if (_referenceVector == null) {
-      _referenceVector = vector;
-      nextStatus = 'Reference captured. Scan again for similarity.';
-    } else {
-      final faceMatcher = getIt<FaceMatcherService>();
-      final similarity = faceMatcher.compare(_referenceVector!, vector);
-      final isMatch = faceMatcher.isMatch(_referenceVector!, vector);
-      nextStatus =
-          'Similarity: ${similarity.toStringAsFixed(4)} | Match: ${isMatch ? 'yes' : 'no'}';
-      _referenceVector = null;
+      setState(() {
+        _isScanning = false;
+        _status = 'Owner capture failed';
+      });
+      return;
     }
 
     setState(() {
+      _ownerReferenceVector = vector;
       _isScanning = false;
-      _status = nextStatus;
+      _status = 'Owner ready. Add second person and tap Scan Duo.';
+    });
+  }
+
+  Future<void> _scanDuoMeeting() async {
+    if (_isScanning) {
+      return;
+    }
+
+    final ownerReference = _ownerReferenceVector;
+    if (ownerReference == null) {
+      setState(() {
+        _status = 'Capture owner first';
+      });
+      return;
+    }
+
+    final frame = _latestFrame;
+    if (frame == null) {
+      setState(() {
+        _status = 'No frame available yet';
+      });
+      return;
+    }
+
+    if (_latestFaceBoxes.length < 2) {
+      setState(() {
+        _status = 'Need two faces in frame';
+      });
+      return;
+    }
+
+    setState(() {
+      _isScanning = true;
+      _status = 'Scanning duo...';
     });
 
-    if (vector != null) {
-      debugPrint('Vector generated (${vector.values.length})');
+    final scanner =
+        getIt<BiometricScanner<BiometricScanRequest<CameraImage>>>();
+    final resolver = getIt<MeetingParticipantResolver>();
+    final faceMatcher = getIt<FaceMatcherService>();
+
+    final faceBounds = _latestFaceBoxes
+        .take(2)
+        .map(_faceBoundsFromRect)
+        .toList(growable: false);
+    final vectors = await scanner.scanFaces(
+      _scanRequest(frame),
+      faceBounds,
+    );
+
+    if (!mounted) {
+      return;
     }
+
+    if (vectors.length < 2) {
+      setState(() {
+        _isScanning = false;
+        _status = 'Vector generation failed for duo';
+      });
+      return;
+    }
+
+    final resolved = resolver.resolve(
+      detectedVectors: vectors,
+      ownerVector: ownerReference,
+      threshold: 0.75,
+    );
+
+    if (!resolved.isOwnerDetected || resolved.owner == null) {
+      setState(() {
+        _isScanning = false;
+        _status = 'Owner not recognized in duo frame';
+      });
+      return;
+    }
+
+    if (!resolved.isGuestDetected || resolved.guest == null) {
+      setState(() {
+        _isScanning = false;
+        _status = 'Guest not recognized in duo frame';
+      });
+      return;
+    }
+
+    final ownerScore = faceMatcher.compare(ownerReference, resolved.owner!);
+    final ownerGuestScore =
+        faceMatcher.compare(resolved.owner!, resolved.guest!);
+
+    setState(() {
+      _isScanning = false;
+      _status =
+          'Duo ready | owner=${ownerScore.toStringAsFixed(3)} guest=${ownerGuestScore.toStringAsFixed(3)}';
+    });
+  }
+
+  BiometricScanRequest<CameraImage> _scanRequest(
+    CameraImage frame, {
+    FaceBounds? faceBounds,
+  }) {
+    return BiometricScanRequest<CameraImage>(
+      image: frame,
+      faceBounds: faceBounds,
+      rotationDegrees: _cameraController!.description.sensorOrientation,
+      isFrontCamera: _cameraController!.description.lensDirection ==
+          CameraLensDirection.front,
+    );
+  }
+
+  FaceBounds _faceBoundsFromRect(Rect rect) {
+    return FaceBounds(
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+    );
+  }
+
+  void _resetOwnerReference() {
+    if (_isScanning) {
+      return;
+    }
+    setState(() {
+      _ownerReferenceVector = null;
+      _status = 'Owner reset. Capture owner again.';
+    });
   }
 
   @override
@@ -277,10 +398,10 @@ class _MirrorPageState extends State<MirrorPage> {
                 fit: StackFit.expand,
                 children: [
                   CameraPreview(_cameraController!),
-                  if (_latestFaceBox != null && _latestImageSize != null)
+                  if (_latestFaceBoxes.isNotEmpty && _latestImageSize != null)
                     CustomPaint(
-                      painter: _FaceBoxPainter(
-                        faceBox: _latestFaceBox!,
+                      painter: _FaceBoxesPainter(
+                        faceBoxes: _latestFaceBoxes,
                         imageSize: _latestImageSize!,
                         isFrontCamera:
                             _cameraController!.description.lensDirection ==
@@ -303,15 +424,31 @@ class _MirrorPageState extends State<MirrorPage> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Text(
+                              'Faces: ${_latestFaceBoxes.length} | Owner: ${_ownerReferenceVector == null ? 'missing' : 'ready'}',
+                              style: const TextStyle(color: Colors.white70),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
                               'Status: $_status',
                               style: const TextStyle(color: Colors.white),
                             ),
                             const SizedBox(height: 8),
                             ElevatedButton(
                               onPressed: _isScanning ? null : _scanMe,
-                              child:
-                                  Text(_isScanning ? 'Scanning...' : 'Scan Me'),
+                              child: Text(
+                                _isScanning
+                                    ? 'Scanning...'
+                                    : _ownerReferenceVector == null
+                                        ? 'Set Me (Owner)'
+                                        : 'Scan Duo',
+                              ),
                             ),
+                            if (_ownerReferenceVector != null)
+                              OutlinedButton(
+                                onPressed:
+                                    _isScanning ? null : _resetOwnerReference,
+                                child: const Text('Reset Owner'),
+                              ),
                           ],
                         ),
                       ),
@@ -324,48 +461,58 @@ class _MirrorPageState extends State<MirrorPage> {
   }
 }
 
-class _FaceBoxPainter extends CustomPainter {
-  _FaceBoxPainter({
-    required this.faceBox,
+class _FaceBoxesPainter extends CustomPainter {
+  _FaceBoxesPainter({
+    required this.faceBoxes,
     required this.imageSize,
     required this.isFrontCamera,
   });
 
-  final Rect faceBox;
+  final List<Rect> faceBoxes;
   final Size imageSize;
   final bool isFrontCamera;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..color = Colors.greenAccent;
+    for (var index = 0; index < faceBoxes.length; index++) {
+      final paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3
+        ..color = index == 0 ? Colors.greenAccent : Colors.orangeAccent;
 
-    // TODO(milestone-f): Improve mapping for rotation-specific coordinates.
-    Rect rect = Rect.fromLTWH(
-      faceBox.left * (size.width / imageSize.width),
-      faceBox.top * (size.height / imageSize.height),
-      faceBox.width * (size.width / imageSize.width),
-      faceBox.height * (size.height / imageSize.height),
-    );
-
-    if (isFrontCamera) {
-      rect = Rect.fromLTRB(
-        size.width - rect.right,
-        rect.top,
-        size.width - rect.left,
-        rect.bottom,
+      final faceBox = faceBoxes[index];
+      // TODO(milestone-f): Improve mapping for rotation-specific coordinates.
+      Rect rect = Rect.fromLTWH(
+        faceBox.left * (size.width / imageSize.width),
+        faceBox.top * (size.height / imageSize.height),
+        faceBox.width * (size.width / imageSize.width),
+        faceBox.height * (size.height / imageSize.height),
       );
-    }
 
-    canvas.drawRect(rect, paint);
+      if (isFrontCamera) {
+        rect = Rect.fromLTRB(
+          size.width - rect.right,
+          rect.top,
+          size.width - rect.left,
+          rect.bottom,
+        );
+      }
+
+      canvas.drawRect(rect, paint);
+    }
   }
 
   @override
-  bool shouldRepaint(covariant _FaceBoxPainter oldDelegate) {
-    return oldDelegate.faceBox != faceBox ||
-        oldDelegate.imageSize != imageSize ||
+  bool shouldRepaint(covariant _FaceBoxesPainter oldDelegate) {
+    if (oldDelegate.faceBoxes.length != faceBoxes.length) {
+      return true;
+    }
+    for (var i = 0; i < faceBoxes.length; i++) {
+      if (oldDelegate.faceBoxes[i] != faceBoxes[i]) {
+        return true;
+      }
+    }
+    return oldDelegate.imageSize != imageSize ||
         oldDelegate.isFrontCamera != isFrontCamera;
   }
 }

@@ -1,6 +1,7 @@
 import '../../core/crypto/ed25519_crypto_provider.dart';
 import '../../core/identity.dart';
 import '../../core/interfaces/crypto_provider.dart';
+import '../../core/utils/app_logger.dart';
 import '../entities/face_vector.dart';
 import '../entities/location_point.dart';
 import '../entities/meeting_proof.dart';
@@ -20,6 +21,11 @@ class MeetingHandshakeService {
     required String previousMeetingHash,
     DateTime? timestamp,
   }) async {
+    AppLogger.log(
+      'HANDSHAKE',
+      'Creating meeting proof (prev=$previousMeetingHash)',
+    );
+
     final meetingSalt = _crypto.randomBytes(16);
     final saltedA = await vectorA.saltedHash(
       salt: meetingSalt,
@@ -38,6 +44,10 @@ class MeetingHandshakeService {
     final combined = '${ordered[0].$2}|${ordered[1].$2}';
     final saltedVectorHash =
         bytesToHex(await _crypto.sha256(combined.codeUnits));
+    AppLogger.log(
+      'HANDSHAKE',
+      'Salted face vectors hashed into proof payload',
+    );
 
     final proof = MeetingProof(
       timestamp: (timestamp ?? DateTime.now().toUtc()).toIso8601String(),
@@ -58,7 +68,7 @@ class MeetingHandshakeService {
       crypto: _crypto,
     );
 
-    return MeetingProof(
+    final signedProof = MeetingProof(
       timestamp: proof.timestamp,
       location: proof.location,
       saltedVectorHash: proof.saltedVectorHash,
@@ -74,5 +84,11 @@ class MeetingHandshakeService {
         ),
       ],
     );
+
+    AppLogger.log(
+      'HANDSHAKE',
+      'Meeting proof signed by both participants',
+    );
+    return signedProof;
   }
 }

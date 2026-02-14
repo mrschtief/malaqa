@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../data/datasources/secure_key_value_store.dart';
 import '../../data/datasources/tflite_biometric_scanner.dart';
+import '../../data/datasources/nearby_service.dart';
 import '../../data/models/meeting_proof_model.dart';
 import '../../data/repositories/isar_chain_repository.dart';
 import '../../data/repositories/secure_identity_repository.dart';
@@ -16,6 +17,7 @@ import '../../domain/services/chain_manager.dart';
 import '../../domain/services/face_matcher_service.dart';
 import '../../domain/services/meeting_handshake_service.dart';
 import '../../domain/services/meeting_participant_resolver.dart';
+import '../../domain/services/proof_importer.dart';
 import '../../domain/services/statistics_service.dart';
 import '../../domain/use_cases/create_meeting_proof_use_case.dart';
 import '../../domain/use_cases/ensure_local_identity_use_case.dart';
@@ -23,7 +25,9 @@ import '../../domain/use_cases/validate_chain_use_case.dart';
 import '../../domain/use_cases/verify_meeting_proof_use_case.dart';
 import '../../presentation/blocs/auth/auth_cubit.dart';
 import '../../presentation/blocs/journey/journey_cubit.dart';
+import '../../presentation/blocs/map/map_cubit.dart';
 import '../../presentation/blocs/meeting/meeting_cubit.dart';
+import '../../presentation/blocs/proximity/proximity_cubit.dart';
 import '../../presentation/blocs/profile/profile_cubit.dart';
 import '../crypto/ed25519_crypto_provider.dart';
 import '../interfaces/crypto_provider.dart';
@@ -70,6 +74,9 @@ Future<void> configureDependencies({
   }
   if (!getIt.isRegistered<FaceMatcherService>()) {
     getIt.registerLazySingleton<FaceMatcherService>(FaceMatcherService.new);
+  }
+  if (!getIt.isRegistered<NearbyService>()) {
+    getIt.registerLazySingleton<NearbyService>(NearbyConnectionsService.new);
   }
   if (!getIt.isRegistered<MeetingParticipantResolver>()) {
     getIt.registerLazySingleton<MeetingParticipantResolver>(
@@ -129,6 +136,19 @@ Future<void> configureDependencies({
     );
   }
 
+  if (getIt.isRegistered<ChainRepository>() &&
+      getIt.isRegistered<VerifyMeetingProofUseCase>() &&
+      getIt.isRegistered<CryptoProvider>() &&
+      !getIt.isRegistered<ProofImporter>()) {
+    getIt.registerLazySingleton<ProofImporter>(
+      () => ProofImporter(
+        chainRepository: getIt<ChainRepository>(),
+        verifyProofUseCase: getIt<VerifyMeetingProofUseCase>(),
+        crypto: getIt<CryptoProvider>(),
+      ),
+    );
+  }
+
   if (getIt.isRegistered<IdentityRepository>() &&
       !getIt.isRegistered<EnsureLocalIdentityUseCase>()) {
     getIt.registerLazySingleton<EnsureLocalIdentityUseCase>(
@@ -168,6 +188,13 @@ Future<void> configureDependencies({
     );
   }
 
+  if (getIt.isRegistered<ChainRepository>() &&
+      !getIt.isRegistered<MapCubit>()) {
+    getIt.registerFactory<MapCubit>(
+      () => MapCubit(getIt<ChainRepository>()),
+    );
+  }
+
   if (getIt.isRegistered<IdentityRepository>() &&
       getIt.isRegistered<ChainRepository>() &&
       !getIt.isRegistered<ProfileCubit>()) {
@@ -177,6 +204,19 @@ Future<void> configureDependencies({
         chainRepository: getIt<ChainRepository>(),
         statisticsService: getIt<StatisticsService>(),
         badgeManager: getIt<BadgeManager>(),
+      ),
+    );
+  }
+
+  if (getIt.isRegistered<ProofImporter>() &&
+      getIt.isRegistered<NearbyService>() &&
+      getIt.isRegistered<FaceMatcherService>() &&
+      !getIt.isRegistered<ProximityCubit>()) {
+    getIt.registerFactory<ProximityCubit>(
+      () => ProximityCubit(
+        nearbyService: getIt<NearbyService>(),
+        proofImporter: getIt<ProofImporter>(),
+        faceMatcher: getIt<FaceMatcherService>(),
       ),
     );
   }

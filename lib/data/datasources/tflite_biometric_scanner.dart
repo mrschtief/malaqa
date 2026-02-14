@@ -20,36 +20,61 @@ class TfliteBiometricScanner
   @override
   Future<FaceVector?> captureFace(
       BiometricScanRequest<CameraImage> input) async {
+    final bounds = input.faceBounds;
+    if (bounds == null) {
+      return null;
+    }
+
+    final vectors = await scanFaces(input, [bounds]);
+    if (vectors.isEmpty) {
+      return null;
+    }
+    return vectors.first;
+  }
+
+  @override
+  Future<List<FaceVector>> scanFaces(
+    BiometricScanRequest<CameraImage> input,
+    List<FaceBounds> allFaces,
+  ) async {
+    if (allFaces.isEmpty) {
+      return const <FaceVector>[];
+    }
+
     final converted = ImageConverter.cameraImageToImage(
       image: input.image,
       rotationDegrees: input.rotationDegrees,
     );
     if (converted == null) {
-      return null;
+      return const <FaceVector>[];
     }
-
-    final faceImage = ImageConverter.cropFace(
-      image: converted,
-      faceBounds: input.faceBounds,
-    );
-    if (faceImage == null) {
-      return null;
-    }
-
-    final preProcessed = ImageConverter.preProcessFace(faceImage);
-    final modelInput = _toModelInput(preProcessed);
 
     final interpreter = await _ensureInterpreter();
     final outputTensorShape = interpreter.getOutputTensors().first.shape;
-    final outputBuffer = _createZeroTensor(outputTensorShape);
+    final vectors = <FaceVector>[];
 
-    interpreter.run(modelInput, outputBuffer);
-    final embedding = _flattenOutput(outputBuffer);
-    if (embedding.isEmpty) {
-      return null;
+    for (final bounds in allFaces) {
+      final faceImage = ImageConverter.cropFace(
+        image: converted,
+        faceBounds: bounds,
+      );
+      if (faceImage == null) {
+        continue;
+      }
+
+      final preProcessed = ImageConverter.preProcessFace(faceImage);
+      final modelInput = _toModelInput(preProcessed);
+      final outputBuffer = _createZeroTensor(outputTensorShape);
+
+      interpreter.run(modelInput, outputBuffer);
+      final embedding = _flattenOutput(outputBuffer);
+      if (embedding.isEmpty) {
+        continue;
+      }
+      vectors.add(FaceVector(embedding));
     }
 
-    return FaceVector(embedding);
+    return vectors;
   }
 
   Future<Interpreter> _ensureInterpreter() async {

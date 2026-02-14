@@ -12,8 +12,11 @@ import '../../core/di/service_locator.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
 import '../blocs/auth/auth_cubit.dart';
 import '../blocs/meeting/meeting_cubit.dart';
-import 'journey_page.dart';
+import '../blocs/proximity/proximity_cubit.dart';
+import 'map_page.dart';
 import 'profile_page.dart';
+import 'qr_scan_page.dart';
+import '../widgets/proximity/proximity_notification.dart';
 
 class AuthPage extends StatefulWidget {
   const AuthPage({super.key});
@@ -47,6 +50,7 @@ class _AuthPageState extends State<AuthPage>
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
         performanceMode: FaceDetectorMode.fast,
+        enableClassification: true,
       ),
     );
     _initializeCamera();
@@ -119,11 +123,12 @@ class _AuthPageState extends State<AuthPage>
         return;
       }
 
-      final faces = await _faceDetector.processImage(inputImage);
-      final sortedBoxes = faces.map((face) => face.boundingBox).toList()
-        ..sort(
-          (a, b) => (b.width * b.height).compareTo(a.width * a.height),
+      final detectedFaces = await _faceDetector.processImage(inputImage);
+      final sortedFaces = [...detectedFaces]..sort(
+          (a, b) => (b.boundingBox.width * b.boundingBox.height)
+              .compareTo(a.boundingBox.width * a.boundingBox.height),
         );
+      final sortedBoxes = sortedFaces.map((face) => face.boundingBox).toList();
 
       if (!mounted) {
         return;
@@ -136,16 +141,16 @@ class _AuthPageState extends State<AuthPage>
       final state = context.read<AuthCubit>().state;
       if (state is AuthScanning && sortedBoxes.isNotEmpty) {
         final request = _scanRequest(image);
-        final bounds = sortedBoxes
+        final bounds = sortedFaces
             .take(2)
-            .map(_faceBoundsFromRect)
+            .map(_faceBoundsFromFace)
             .toList(growable: false);
         unawaited(context.read<AuthCubit>().processFrame(request, bounds));
       }
       if (state is AuthAuthenticated && sortedBoxes.isNotEmpty) {
         final request = _scanRequest(image);
         final bounds =
-            sortedBoxes.map(_faceBoundsFromRect).toList(growable: false);
+            sortedFaces.map(_faceBoundsFromFace).toList(growable: false);
         unawaited(context.read<MeetingCubit>().processFrame(request, bounds));
       }
     } catch (_) {
@@ -219,6 +224,19 @@ class _AuthPageState extends State<AuthPage>
       rotationDegrees: _cameraController!.description.sensorOrientation,
       isFrontCamera: _cameraController!.description.lensDirection ==
           CameraLensDirection.front,
+    );
+  }
+
+  FaceBounds _faceBoundsFromFace(Face face) {
+    final rect = face.boundingBox;
+    return FaceBounds(
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      smilingProbability: face.smilingProbability,
+      leftEyeOpenProbability: face.leftEyeOpenProbability,
+      rightEyeOpenProbability: face.rightEyeOpenProbability,
     );
   }
 
@@ -306,9 +324,16 @@ class _AuthPageState extends State<AuthPage>
                 identity: state.identity,
                 ownerVector: state.ownerVector,
               );
+          unawaited(
+            context.read<ProximityCubit>().setAuthenticated(
+                  userName: state.identity.name,
+                  ownerVector: state.ownerVector,
+                ),
+          );
           return;
         }
         context.read<MeetingCubit>().clearAuthentication();
+        unawaited(context.read<ProximityCubit>().clearAuthentication());
       },
       builder: (context, state) {
         return BlocListener<MeetingCubit, MeetingState>(
@@ -316,6 +341,12 @@ class _AuthPageState extends State<AuthPage>
             if (meetingState is! MeetingSuccess) {
               return;
             }
+            unawaited(
+              context.read<ProximityCubit>().advertiseMeeting(
+                    proof: meetingState.proof,
+                    guestVector: meetingState.guestVector,
+                  ),
+            );
             showModalBottomSheet<void>(
               context: context,
               isDismissible: false,
@@ -357,6 +388,9 @@ class _AuthPageState extends State<AuthPage>
               final guestBounds = meetingState is MeetingReady
                   ? meetingState.guestBounds
                   : null;
+              final isGuestLivenessVerified = meetingState is MeetingReady
+                  ? meetingState.isLivenessVerified
+                  : false;
 
               return Scaffold(
                 backgroundColor: Colors.black,
@@ -396,7 +430,19 @@ class _AuthPageState extends State<AuthPage>
                                   isFrontCamera: _cameraController!
                                           .description.lensDirection ==
                                       CameraLensDirection.front,
+                                  isVerified: isGuestLivenessVerified,
                                 ),
+                              ),
+                            if (meetingState is MeetingReady &&
+                                _latestImageSize != null)
+                              _GuestLivenessBadge(
+                                guestBounds: meetingState.guestBounds,
+                                imageSize: _latestImageSize!,
+                                isFrontCamera: _cameraController!
+                                        .description.lensDirection ==
+                                    CameraLensDirection.front,
+                                isVerified: meetingState.isLivenessVerified,
+                                prompt: meetingState.livenessPrompt,
                               ),
                             Positioned(
                               top: 24,
@@ -406,6 +452,12 @@ class _AuthPageState extends State<AuthPage>
                                 state: state,
                                 meetingState: meetingState,
                               ),
+                            ),
+                            const Positioned(
+                              top: 78,
+                              left: 8,
+                              right: 8,
+                              child: ProximityNotificationOverlay(),
                             ),
                             if (state is AuthSetup)
                               Positioned(
@@ -453,10 +505,12 @@ class _AuthPageState extends State<AuthPage>
                                     onCapture: () => context
                                         .read<MeetingCubit>()
                                         .captureMeeting(),
-                                    onOpenJourney: () => Navigator.of(context)
-                                        .push(JourneyPage.route()),
+                                    onOpenMap: () => Navigator.of(context)
+                                        .push(MapPage.route()),
                                     onOpenProfile: () => Navigator.of(context)
                                         .push(ProfilePage.route()),
+                                    onOpenQrScan: () => Navigator.of(context)
+                                        .push(QrScanPage.route()),
                                   ),
                                 ),
                               ),
@@ -495,7 +549,7 @@ class _TopStatusLabel extends StatelessWidget {
     final text = switch (state) {
       AuthInitial _ => 'Initializing...',
       AuthSetup s => s.message,
-      AuthScanning _ => 'Looking for you...',
+      AuthScanning s => s.livenessPrompt,
       AuthAuthenticated s => _meetingMessage(s),
       AuthLocked s => s.reason,
     };
@@ -519,7 +573,9 @@ class _TopStatusLabel extends StatelessWidget {
   String _meetingMessage(AuthAuthenticated state) {
     return switch (meetingState) {
       MeetingIdle m => 'Welcome back, ${state.identity.name}. ${m.message}',
-      MeetingReady _ => 'Guest detected. Capture is ready.',
+      MeetingReady m => m.isLivenessVerified
+          ? 'Guest verified. Capture is ready.'
+          : 'Guest detected. ${m.livenessPrompt}',
       MeetingCapturing _ => 'Creating proof...',
       MeetingSuccess s => 'Meeting #${s.chainIndex} saved.',
       MeetingError e => e.message,
@@ -532,22 +588,26 @@ class _AuthenticatedControls extends StatelessWidget {
     required this.state,
     required this.meetingState,
     required this.onCapture,
-    required this.onOpenJourney,
+    required this.onOpenMap,
     required this.onOpenProfile,
+    required this.onOpenQrScan,
   });
 
   final AuthState state;
   final MeetingState meetingState;
   final VoidCallback onCapture;
-  final VoidCallback onOpenJourney;
+  final VoidCallback onOpenMap;
   final VoidCallback onOpenProfile;
+  final VoidCallback onOpenQrScan;
 
   @override
   Widget build(BuildContext context) {
     final name = state is AuthAuthenticated
         ? (state as AuthAuthenticated).identity.name
         : 'User';
-    final isReady = meetingState is MeetingReady;
+    final meetingReady =
+        meetingState is MeetingReady ? meetingState as MeetingReady : null;
+    final isReady = meetingReady?.isLivenessVerified ?? false;
     final isCapturing = meetingState is MeetingCapturing;
     final captureLabel = isCapturing
         ? 'Capturing...'
@@ -557,6 +617,21 @@ class _AuthenticatedControls extends StatelessWidget {
 
     return Stack(
       children: [
+        Positioned(
+          top: 20,
+          left: 20,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.black.withAlpha(180),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: IconButton(
+              onPressed: onOpenQrScan,
+              icon: const Icon(Icons.qr_code_scanner, color: Colors.white),
+              tooltip: 'Scan QR',
+            ),
+          ),
+        ),
         Positioned(
           top: 20,
           right: 20,
@@ -584,7 +659,7 @@ class _AuthenticatedControls extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
             ),
             child: IconButton(
-              onPressed: onOpenJourney,
+              onPressed: onOpenMap,
               icon: const Icon(Icons.map_outlined, color: Colors.white),
             ),
           ),
@@ -629,7 +704,9 @@ class _AuthenticatedControls extends StatelessWidget {
             child: Text(
               switch (meetingState) {
                 MeetingIdle m => m.message,
-                MeetingReady _ => 'Guest locked. Press capture.',
+                MeetingReady m => m.isLivenessVerified
+                    ? 'Guest verified. Press capture.'
+                    : m.livenessPrompt,
                 MeetingCapturing _ => 'Creating proof...',
                 MeetingSuccess _ => 'Chain extended.',
                 MeetingError e => e.message,
@@ -651,11 +728,13 @@ class _GuestReticlePainter extends CustomPainter {
     required this.guestBounds,
     required this.imageSize,
     required this.isFrontCamera,
+    required this.isVerified,
   });
 
   final FaceBounds guestBounds;
   final Size imageSize;
   final bool isFrontCamera;
+  final bool isVerified;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -677,7 +756,8 @@ class _GuestReticlePainter extends CustomPainter {
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5
-      ..color = const Color(0xFF00E5FF).withValues(alpha: 0.95);
+      ..color = (isVerified ? const Color(0xFF2ECC71) : const Color(0xFF00E5FF))
+          .withValues(alpha: 0.95);
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect.inflate(8), const Radius.circular(16)),
       paint,
@@ -688,7 +768,86 @@ class _GuestReticlePainter extends CustomPainter {
   bool shouldRepaint(covariant _GuestReticlePainter oldDelegate) {
     return oldDelegate.guestBounds != guestBounds ||
         oldDelegate.imageSize != imageSize ||
-        oldDelegate.isFrontCamera != isFrontCamera;
+        oldDelegate.isFrontCamera != isFrontCamera ||
+        oldDelegate.isVerified != isVerified;
+  }
+}
+
+class _GuestLivenessBadge extends StatelessWidget {
+  const _GuestLivenessBadge({
+    required this.guestBounds,
+    required this.imageSize,
+    required this.isFrontCamera,
+    required this.isVerified,
+    required this.prompt,
+  });
+
+  final FaceBounds guestBounds;
+  final Size imageSize;
+  final bool isFrontCamera;
+  final bool isVerified;
+  final String prompt;
+
+  @override
+  Widget build(BuildContext context) {
+    final previewSize = MediaQuery.of(context).size;
+    var rect = Rect.fromLTWH(
+      guestBounds.left * (previewSize.width / imageSize.width),
+      guestBounds.top * (previewSize.height / imageSize.height),
+      guestBounds.width * (previewSize.width / imageSize.width),
+      guestBounds.height * (previewSize.height / imageSize.height),
+    );
+
+    if (isFrontCamera) {
+      rect = Rect.fromLTRB(
+        previewSize.width - rect.right,
+        rect.top,
+        previewSize.width - rect.left,
+        rect.bottom,
+      );
+    }
+
+    final left = rect.left.clamp(8.0, previewSize.width - 180);
+    final top = (rect.top - 34).clamp(10.0, previewSize.height - 80);
+
+    return Positioned(
+      left: left,
+      top: top,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.68),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isVerified
+                ? const Color(0xFF2ECC71).withValues(alpha: 0.85)
+                : const Color(0xFF00E5FF).withValues(alpha: 0.85),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isVerified ? Icons.verified : Icons.sentiment_satisfied_alt,
+                size: 15,
+                color: isVerified
+                    ? const Color(0xFF2ECC71)
+                    : const Color(0xFF00E5FF),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                isVerified ? 'Verified' : prompt,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

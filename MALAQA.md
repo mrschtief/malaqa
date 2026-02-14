@@ -415,6 +415,122 @@ Umgesetzt:
   - `statistics_service_test.dart`
   - `badge_manager_test.dart`
 
+### Milestone L: The World Map
+
+Status: `abgeschlossen (MVP)`
+
+Umgesetzt:
+
+- OpenStreetMap-Visualisierung mit `flutter_map` + `latlong2`.
+- Neues Map-State-Management:
+  - `MapCubit` mit `MapLoading`, `MapLoaded`, `MapEmpty`, `MapError`.
+  - Filtert ungueltige Koordinaten (`0,0`) und erzeugt Marker + Chronologie-Polyline.
+- Neue `MapPage`:
+  - OSM TileLayer (`https://tile.openstreetmap.org/{z}/{x}/{y}.png`)
+  - Polyline fuer Kettenverlauf (Malaqa-Cyan, halbtransparent)
+  - MarkerLayer mit Start-Flag + Standard-Marker
+  - Marker-Tap zeigt Meeting-Details als Bottom Sheet.
+- Optionaler aktueller Standort:
+  - Runtime-Permission via `geolocator`
+  - pulsierender Standortpunkt, falls Permission verfuegbar.
+- Navigation:
+  - Map-Button in `AuthPage` fuehrt auf die echte `MapPage`.
+  - `JourneyPage` hat AppBar-Aktion `Show Map`.
+- Tests erweitert:
+  - `map_cubit_test.dart` (Marker/Polyline-Aufbau + Koordinaten-Filterung).
+
+### Milestone M: The QR Fallback Bridge
+
+Status: `abgeschlossen (MVP)`
+
+Umgesetzt:
+
+- Neue zentrale Import-Logik in der Domain:
+  - `ProofImporter` als wiederverwendbarer Inbound-Kanal fuer Proof-Transfers.
+  - Input: JSON-Payload.
+  - Ablauf:
+    - Parse zu `MeetingProof`
+    - Signatur-Validierung ueber `VerifyMeetingProofUseCase`
+    - Duplikatpruefung ueber Proof-Hash
+    - Persistenz via `ChainRepository`.
+  - Output: `ImportResult` mit `success` / `duplicate` / `invalid`.
+- QR-Sender (Fallback):
+  - `QrShareDialog` zeigt QR fuer einen gespeicherten Proof.
+  - Journey-Liste hat pro Meeting einen QR-Button.
+- QR-Empfaenger:
+  - neue `QrScanPage` mit `mobile_scanner`.
+  - scannt QR, ruft `ProofImporter` auf, zeigt Ergebnisstatus (success/duplicate/invalid).
+- App-Integration:
+  - In `AuthPage` steht im authentifizierten Zustand ein unauffaelliger `Scan QR` Einstieg bereit (oben links).
+- Architekturziel fuer naechste Phase:
+  - dieselbe `ProofImporter`-Logik kann in Milestone N fuer BLE/WiFi-Direct Receptions genutzt werden.
+- Tests erweitert:
+  - `proof_importer_test.dart` (valid import, duplicate detection, invalid payload).
+
+### Milestone N: The Proximity Mesh & Auto-Discovery
+
+Status: `abgeschlossen (MVP)`
+
+Umgesetzt:
+
+- P2P-Infrastruktur:
+  - `NearbyService` Abstraktion + `NearbyConnectionsService` Implementierung auf Basis `nearby_connections`.
+  - Sender-Fluss: Advertising startet mit serialisiertem Payload.
+  - Empfaenger-Fluss: Discovery + Auto-RequestConnection + Auto-AcceptConnection.
+  - Payload-Weitergabe als JSON-Bytes ueber Nearby.
+- Proximity-Orchestrierung:
+  - neuer `ProximityCubit` mit Rollenlogik fuer Sender/Empfaenger.
+  - bei `AuthAuthenticated`: Discovery aktiv.
+  - bei `MeetingSuccess`: Advertising fuer 30 Sekunden, danach Rueckkehr zu Discovery.
+  - eingehender Payload:
+    - Parse Envelope (`proof` + `guestVector`)
+    - Face-Match gegen lokalen Owner-Vector
+    - nur bei Match -> `ProximityMatchFound`.
+- In-App Notification Overlay:
+  - neues Widget `ProximityNotificationOverlay` ueber der Kamera.
+  - Card-Flow:
+    - "Jemand hat dich gerade gesehen"
+    - Aktionen: `Claim & Save` / `Ignorieren`
+    - Claim nutzt zentralen `ProofImporter`.
+- Integration in bestehende Flows:
+  - `AuthPage`: Auth-State toggelt Discovery.
+  - `AuthPage`: Meeting-Success triggert Advertising mit transferierbarer Payload.
+  - `MeetingSuccess` transportiert jetzt den erkannten Guest-Vector fuer den Sender-Transferkontext.
+- Plattformberechtigungen:
+  - Android: Bluetooth + Nearby-WiFi + Location Permissions erweitert.
+  - iOS: Bluetooth/LocalNetwork/Bonjour Usage Keys ergaenzt.
+- Tests erweitert:
+  - `proximity_cubit_test.dart` prueft Match-/No-Match-Verhalten mit gemocktem Nearby-Kanal.
+
+### Milestone O: The Truth Test (Liveness & Anti-Spoofing)
+
+Status: `abgeschlossen (MVP)`
+
+Umgesetzt:
+
+- Liveness-Domainkomponente:
+  - `LivenessGuard` in `lib/domain/security/liveness_guard.dart`.
+  - zufaellige Challenge pro Session (`smile` oder `blink`).
+  - Challenge-Auswertung auf Basis von Face-Klassifikationswerten.
+- Scanner-Metadaten erweitert:
+  - `FaceBounds` transportiert jetzt optional:
+    - `smilingProbability`
+    - `leftEyeOpenProbability`
+    - `rightEyeOpenProbability`
+- ML Kit Pipeline erweitert:
+  - `FaceDetectorOptions(enableClassification: true)` in der Camera-Schleife aktiviert.
+  - Face-Attribute werden in den Scan-Flow uebergeben.
+- Auth-Flow gehaertet:
+  - `AuthCubit` verlangt zusaetzlich zur Face-Similarity einen bestandenen Liveness-Check.
+  - UI zeigt proaktiv Challenge-Hinweise (z. B. "Kurz laecheln!" / "Kurz blinzeln!").
+- Meeting-Flow gehaertet:
+  - `MeetingCubit` validiert Liveness des Guests vor Capture-Freigabe.
+  - Capture-Button wird erst aktiv, wenn Guest-Liveness erfolgreich ist.
+  - Gast-Reticle + Badge visualisieren Verifikationsfortschritt.
+- Tests erweitert:
+  - `liveness_guard_test.dart` mit Stream-aehnlicher Sequenz (neutral -> neutral -> smile).
+  - bestehende Auth-/Meeting-Tests auf Liveness-Metadaten angepasst.
+
 ### Implementierungsstand nach Modulen (Detail)
 
 `lib/core/`:
@@ -428,6 +544,7 @@ Umgesetzt:
 `lib/data/`:
 
 - `lib/data/datasources/tflite_biometric_scanner.dart`: Kamera-Frame + Face-Bounds -> echte MobileFaceNet Inferenz -> `FaceVector`.
+- `lib/data/datasources/nearby_service.dart`: P2P Discovery/Advertising/Payload-Transport als gekapselter Nearby-Adapter.
 - `lib/data/datasources/secure_key_value_store.dart`: Secure Storage Adapter fuer sensible Schluesseldaten.
 - `lib/data/models/meeting_proof_model.dart`: Isar Datenmodell + Mapping zwischen DB und Domain.
 - `lib/data/repositories/secure_identity_repository.dart`: sichere Persistenz/Restore von Identity Keys.
@@ -451,6 +568,10 @@ Umgesetzt:
 
 - `lib/domain/gamification/badge_definitions.dart`: Badge-Metadaten und Schwellenwerte.
 - `lib/domain/gamification/badge_manager.dart`: Unlock- und Fortschrittslogik fuer Badges.
+
+`lib/domain/security/`:
+
+- `lib/domain/security/liveness_guard.dart`: Challenge-basierte Anti-Spoofing-Liveness-Logik.
 
 `lib/domain/interfaces/`:
 
@@ -480,6 +601,10 @@ Umgesetzt:
 - `test/widget_test.dart`: Flutter Test-Skeleton vorhanden.
 - `test/statistics_service_test.dart`: Distanz-, Zero-Location- und Unique-People-Statistiktests.
 - `test/badge_manager_test.dart`: Badge-Unlock-Logik fuer leeres Profil und Erst-Meeting.
+- `test/map_cubit_test.dart`: Geo-Transformationslogik fuer Marker/Polyline und Invalid-Filtering.
+- `test/proof_importer_test.dart`: QR-Importkern mit Validierung und Duplikat-Erkennung.
+- `test/proximity_cubit_test.dart`: Auto-Discovery Logik (Payload-Match vs. stille Verwerfung).
+- `test/liveness_guard_test.dart`: Liveness-Challenge Sequenztest fuer Anti-Spoofing.
 
 `platform`:
 
@@ -575,7 +700,7 @@ Offen und konkret noch zu bauen:
 
 - ML Kit Detection aus `MirrorPage` in einen separaten Data Adapter extrahieren.
 - TFLite-Pipeline mit robustem Fehlerhandling (Model load/inference fallback) haerten.
-- Optionale Liveness-Pruefung vor Embedding-Erzeugung integrieren.
+- Liveness-Checks feintunen (z. B. mehrstufige Challenges, Zeitfenster, Fehlertoleranz).
 
 `Phase 2 / Lokaler Handshake ueber zwei Geraete`:
 
@@ -591,7 +716,7 @@ Offen und konkret noch zu bauen:
 
 `Security-Haertung`:
 
-- Liveness-Konzept konkretisieren und in Interfaces giesen.
+- Spoofing-Schutz auf "Photo + Replay + Screen Re-Capture" erweitern (z. B. Moire-Checks).
 - Schluesselrotation und DID-Lifecycle spezifizieren.
 - Replay-Schutz und Rate-Limits fuer Handshake-Flows definieren.
 
@@ -671,6 +796,22 @@ Milestone J:
 Milestone K:
 
 - `abgeschlossen (MVP)` Profile & Stats Engine (Statistiken, Badge-System, Profile-UI, Navigation).
+
+Milestone L:
+
+- `abgeschlossen (MVP)` World Map (OSM), Pfad-Visualisierung und Karten-Navigation.
+
+Milestone M:
+
+- `abgeschlossen (MVP)` QR Fallback Bridge fuer Proof-Transfer inkl. zentralem ProofImporter.
+
+Milestone N:
+
+- `abgeschlossen (MVP)` Proximity Mesh mit Nearby Auto-Discovery und In-App Claim-Overlay.
+
+Milestone O:
+
+- `abgeschlossen (MVP)` Liveness & Anti-Spoofing fuer Auth- und Meeting-Flow.
 
 ---
 

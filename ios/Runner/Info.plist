@@ -28,6 +28,16 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Malaqa needs camera access to create meeting proofs.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Malaqa uses Bluetooth to discover nearby meeting proofs.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Malaqa uses the local network for nearby peer discovery.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Malaqa uses your location to show your position on the world map.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_malaqa._tcp</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
