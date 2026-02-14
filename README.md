@@ -1,34 +1,43 @@
 # malaqa
 
-Flutter + Dart core project for the `malaqa` decentralized meeting chain protocol.
+`malaqa` is an offline-first, privacy-first mobile protocol for verifiable human encounters.
 
-## Scope (Phase 0 + Phase 1 Milestone G)
+## Current Feature Set
 
-- Ed25519 identities and signatures
-- Privacy-first face-vector salting + hashing
-- Meeting proof creation and verification
-- Chain validation across linked proofs
-- Flutter mirror loop with camera preview and ML Kit face detection overlay
-- Real TFLite biometric scanner flow (`Scan Me` -> vector + similarity)
-- Secure local identity persistence via platform key stores
-- Isar-based proof chain persistence with integrity validation
+- Magic Mirror Auth (camera-first, zero-click owner recognition)
+- Duo meeting capture (owner + guest detection in one frame)
+- Liveness guard (smile/blink challenge to reduce spoofing)
+- Cryptographic proof chain (signed `MeetingProof` links)
+- Local persistence with integrity checks (Isar + proof hash validation)
+- Journey timeline + world map visualization
+- Profile stats + badge gamification
+- QR fallback bridge for manual proof transfer
+- Nearby P2P mesh flow for automatic proximity claim
+- IPFS bridge (local CID computation + sync orchestration)
+- Blockchain anchor layer (offline Ethereum tx signing, simulation mode)
+- First-run onboarding + settings vault (nearby visibility, reset, backup reveal)
 
-## Structure
+## Architecture
 
-- `lib/core/`: crypto interface, Ed25519 provider, identity
-- `lib/data/`: device/data adapters
-- `lib/domain/entities/`: `FaceVector`, `MeetingProof`, signatures, location
-- `lib/domain/services/`: handshake, chain validation, face matching
-- `lib/presentation/pages/mirror_page.dart`: camera mirror POC screen
-- `lib/data/datasources/tflite_biometric_scanner.dart`: MobileFaceNet inference scanner
-- `lib/core/utils/image_converter.dart`: camera frame conversion and preprocessing
-- `lib/data/repositories/secure_identity_repository.dart`: secure identity storage
-- `lib/data/repositories/isar_chain_repository.dart`: persistent proof chain storage
-- `lib/data/models/meeting_proof_model.dart`: Isar DB model + mapping
-- `test/magellan_core_test.dart`: TDD suite for core protocol behavior
-- `bin/main.dart`: CLI simulation (Alice -> Bob -> Charlie)
+- `lib/core/`: crypto primitives, identity, DI, settings primitives
+- `lib/domain/`: entities, repositories, services, protocol rules
+- `lib/data/`: hardware/storage/network adapters
+- `lib/presentation/`: app shell, pages, cubits, UX flows
+- `test/`: unit + integration verification suite
 
-## Run
+## Tech Stack
+
+- Flutter / Dart
+- Camera + ML Kit + TensorFlow Lite
+- Isar (`isar`, `isar_flutter_libs`)
+- Secure storage (`flutter_secure_storage`)
+- Maps (`flutter_map`, `latlong2`, OpenStreetMap tiles)
+- P2P (`nearby_connections`, QR fallback via `qr_flutter` + `mobile_scanner`)
+- Crypto (`cryptography`, Ed25519/SHA-256)
+- Web3 (`web3dart`, `bip39`)
+- Sync bridge (`http`, `cid`)
+
+## Quick Start
 
 ```bash
 flutter pub get
@@ -37,8 +46,10 @@ flutter test
 flutter run
 ```
 
-For camera testing, run on a real Android/iOS device.
+## Requirements / Notes
 
-Model asset expected at:
-
-`assets/models/mobilefacenet.tflite`
+- Recommended device testing on physical Android/iOS hardware.
+- Android config currently requires `minSdkVersion 23`.
+- Model expected at `assets/models/mobilefacenet.tflite`.
+- Main planning and status: `MALAQA.md`.
+- Session protocol and execution rules: `AGENTS.md`.

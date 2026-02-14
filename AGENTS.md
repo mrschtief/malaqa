@@ -2,6 +2,17 @@
 
 Dieses Dokument steuert, wie wir im Projekt `malaqa` arbeiten.
 
+## STOP-&-GO USER-TAKTIK (HÖCHSTE PRIORITÄT)
+
+1. Nach jedem einzelnen Sub-Task: STOPP.
+2. Kurz berichten:
+   - Was wurde umgesetzt?
+   - Welche Tests/Laufchecks wurden ausgefuehrt?
+   - Welche Risiken/Offenen Fragen bleiben?
+3. Explizit User-Go abwarten, bevor der naechste Sub-Task startet.
+4. Bei zu grossen Multi-Milestone-Prompts aktiv bremsen:
+   - "Stopp, Gemini. Lass uns erst X verifizieren, bevor wir Y bauen."
+
 Masterplan:
 
 - Siehe `MALAQA.md` fuer Vision, Architektur, Roadmap und Status.

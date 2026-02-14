@@ -415,7 +415,7 @@ Umgesetzt:
   - `statistics_service_test.dart`
   - `badge_manager_test.dart`
 
-### Milestone L: The World Map
+### Milestone L: The World Map [x] Done
 
 Status: `abgeschlossen (MVP)`
 
@@ -439,7 +439,7 @@ Umgesetzt:
 - Tests erweitert:
   - `map_cubit_test.dart` (Marker/Polyline-Aufbau + Koordinaten-Filterung).
 
-### Milestone M: The QR Fallback Bridge
+### Milestone M: The QR Fallback Bridge [x] Done
 
 Status: `abgeschlossen (MVP)`
 
@@ -467,7 +467,7 @@ Umgesetzt:
 - Tests erweitert:
   - `proof_importer_test.dart` (valid import, duplicate detection, invalid payload).
 
-### Milestone N: The Proximity Mesh & Auto-Discovery
+### Milestone N: The Proximity Mesh & Auto-Discovery [x] Done
 
 Status: `abgeschlossen (MVP)`
 
@@ -502,7 +502,7 @@ Umgesetzt:
 - Tests erweitert:
   - `proximity_cubit_test.dart` prueft Match-/No-Match-Verhalten mit gemocktem Nearby-Kanal.
 
-### Milestone O: The Truth Test (Liveness & Anti-Spoofing)
+### Milestone O: The Truth Test (Liveness & Anti-Spoofing) [x] Done
 
 Status: `abgeschlossen (MVP)`
 
@@ -531,7 +531,7 @@ Umgesetzt:
   - `liveness_guard_test.dart` mit Stream-aehnlicher Sequenz (neutral -> neutral -> smile).
   - bestehende Auth-/Meeting-Tests auf Liveness-Metadaten angepasst.
 
-### Milestone P: The IPFS Bridge (Option B)
+### Milestone P: The IPFS Bridge (Option B) [x] Done
 
 Status: `abgeschlossen (Local Mock + vorbereiteter HTTP-Pfad)`
 
@@ -563,7 +563,7 @@ Umgesetzt:
   - `test/ipfs_repository_test.dart`
   - `test/decentralized_sync_service_test.dart`
 
-### Milestone Q: The Blockchain Anchor
+### Milestone Q: The Blockchain Anchor [x] Done
 
 Status: `abgeschlossen (offline-signing MVP, no-gas mode)`
 
@@ -590,7 +590,7 @@ Umgesetzt:
     - kryptografisch gueltige Signatur
     - Sender-Mocking und Simulationspfad.
 
-### Milestone R: The Grand Entrance (Onboarding & Settings)
+### Milestone R: The Grand Entrance (Onboarding & Settings) [x] Done
 
 Status: `abgeschlossen (MVP)`
 
@@ -901,31 +901,31 @@ Milestone K:
 
 Milestone L:
 
-- `abgeschlossen (MVP)` World Map (OSM), Pfad-Visualisierung und Karten-Navigation.
+- [x] Done - World Map (OSM), Pfad-Visualisierung und Karten-Navigation.
 
 Milestone M:
 
-- `abgeschlossen (MVP)` QR Fallback Bridge fuer Proof-Transfer inkl. zentralem ProofImporter.
+- [x] Done - QR Fallback Bridge fuer Proof-Transfer inkl. zentralem ProofImporter.
 
 Milestone N:
 
-- `abgeschlossen (MVP)` Proximity Mesh mit Nearby Auto-Discovery und In-App Claim-Overlay.
+- [x] Done - Proximity Mesh mit Nearby Auto-Discovery und In-App Claim-Overlay.
 
 Milestone O:
 
-- `abgeschlossen (MVP)` Liveness & Anti-Spoofing fuer Auth- und Meeting-Flow.
+- [x] Done - Liveness & Anti-Spoofing fuer Auth- und Meeting-Flow.
 
 Milestone P:
 
-- `abgeschlossen (Option B / Local Mock)` IPFS-Bridge inkl. CID-Berechnung, `ipfsCid`-Persistenz und vorbereiteter HTTP-Upload-Architektur.
+- [x] Done - IPFS-Bridge inkl. CID-Berechnung, `ipfsCid`-Persistenz und vorbereiteter HTTP-Upload-Architektur.
 
 Milestone Q:
 
-- `abgeschlossen (MVP, offline-signing)` Blockchain-Anchor-Layer mit Ethereum-kompatibler Wallet-Ableitung und vorbereiteter TX-Broadcast-Schnittstelle.
+- [x] Done - Blockchain-Anchor-Layer mit Ethereum-kompatibler Wallet-Ableitung und vorbereiteter TX-Broadcast-Schnittstelle.
 
 Milestone R:
 
-- `abgeschlossen (MVP)` First-Run-Onboarding, Settings-Vault und kontrollierbarer Nearby-Visibility-/Reset-Flow.
+- [x] Done - First-Run-Onboarding, Settings-Vault und kontrollierbarer Nearby-Visibility-/Reset-Flow.
 
 ---
 
