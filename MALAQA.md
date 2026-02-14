@@ -17,6 +17,42 @@ Ziele:
 - Verifikation durch Signaturen und Kettenhashes
 - Schrittweise Evolution von lokaler Logik zu dezentraler Synchronisierung
 
+### Vision Reset: Spiel + Sinn
+
+`malaqa` ist nicht nur eine sichere Datenpipeline, sondern ein soziales Spiel mit echter Bedeutung:
+
+- Spielkern: Ein viraler Staffelstab. Ich starte eine Kette, uebergebe sie per gemeinsamer Aufnahme, und die Kette reist ohne mich weiter.
+- Belohnung: Spaeteres Wiedersehen ueber die Kette (z. B. neue Stationen, Distanz, Kontinente, Connector-Rollen).
+- Produktgefuehl: "Magic Moment" statt Formular-Flow. Technik bleibt im Hintergrund, Begegnung steht im Vordergrund.
+
+Das grosse Ziel bleibt ein Privacy-First "Web of Trust":
+
+- Gegenmittel zu Bots/Deepfakes durch kryptografisch belegte reale Begegnungen.
+- Kein zentraler Betreiber, kein zentraler Bildpool, kein Plattform-Lock-in.
+- Sichtbarkeit wird abgestuft gedacht (Trust Circles/Radien), damit Neugier und Datenschutz zusammenpassen.
+
+UX-Leitstern fuer die naechsten Phasen:
+
+- Camera-first Einstieg.
+- Reibungsarme Owner+Guest-Erkennung fuer Duo-Selfies.
+- Begegnung fuehlt sich wie ein Pakt an, nicht wie Registrierung.
+
+### Vision Reset: Magic Mirror Auth
+
+Die App-Eingangstuer ist jetzt als "biometrischer Spiegel" gedacht:
+
+- Zero-Click Login: Start direkt in die Kamera, kein E-Mail/Passwort.
+- Die App sucht den Owner im Hintergrund und entsperrt automatisch bei Match.
+- Das Entsperren fuehlt sich physisch an (Haptic Feedback) und blendet die Controls weich ein.
+- Setup-Fall bleibt reibungsarm:
+  - Kein vorhandenes Profil -> "Create Identity & Start Journey"
+  - erster gueltiger Face-Scan wird als lokales Owner-Template gespeichert.
+
+Produktziel:
+
+- Technik bleibt unsichtbar (Kamera/ML/Krypto laufen im Hintergrund).
+- Vordergrund ist das Erlebnis: Begegnung, Staffelstab, lebendige Kette.
+
 ## 2. Leitprinzipien
 
 - Offline-first: Kernfunktionen muessen ohne Internet laufen.
@@ -230,10 +266,154 @@ Umgesetzt:
   - Erste App-Ausfuehrung erzeugt lokale Identity und speichert sie sicher.
   - Folgestarts laden dieselbe Identity wieder.
 - Tests:
-  - `test/secure_identity_repository_test.dart`
-  - `test/isar_chain_repository_test.dart`
-  - `test/image_converter_test.dart`
-  - Alle bestehenden Tests bleiben gruen.
+- `test/secure_identity_repository_test.dart`
+- `test/isar_chain_repository_test.dart`
+- `test/image_converter_test.dart`
+- Alle bestehenden Tests bleiben gruen.
+
+### Milestone G-2: Headless Logic Verification
+
+Status: `abgeschlossen`
+
+Umgesetzt:
+
+- `AppLogger` als gemeinsame Debug/Test-Logging-Infrastruktur.
+- Logger-Integration in kritische Flows:
+  - Identity Save/Load
+  - Meeting Handshake
+  - Isar Persistenz/Reload
+  - Bootstrap-UseCase fuer lokale Identity
+- Headless Systemtest mit echtem Kern:
+  - echte Isar in Temp-Directory
+  - echte UseCases/Repositories/Signaturen
+  - gemockte Hardware-Raender (Scanner + Secure Store)
+  - Roundtrip: Scan -> Proof -> Save -> Reboot -> Load -> Verify.
+
+Ergebnis:
+
+- Vollstaendige, automatisierte End-to-End-Pruefung der Kernlogik ohne Emulator/Geraet.
+- Detaillierte, assertbare Ablauf-Logs aus dem Testlauf.
+
+### Milestone G-3: Multi-Face Domain Upgrade
+
+Status: `abgeschlossen`
+
+Umgesetzt:
+
+- Scanner-Schnittstelle auf Multi-Face erweitert:
+  - `scanFaces(...)` in `BiometricScanner`.
+- TFLite-Adapter kann mehrere Face-Bounds in einem Frame verarbeiten.
+- Neuer Domain-Service:
+  - `MeetingParticipantResolver`
+  - ordnet erkannte Vektoren in `owner` und `guest` ein.
+- Headless Roundtrip-Test erweitert:
+  - explizite Duo-Erkennung (Owner+Guest) vor Proof-Erzeugung.
+- Zusaeztliche Resolver-Unit-Tests fuer positive/negative Zuordnung.
+
+### Milestone H: Seamless Face Auth (Magic Mirror)
+
+Status: `abgeschlossen (erste produktnahe Version)`
+
+Umgesetzt:
+
+- Neues State-Management fuer Face-Auth:
+  - `AuthCubit` + Zustandsmodell (`Initial`, `Setup`, `Scanning`, `Authenticated`, `Locked`)
+  - Debounce/Throttle in der Scan-Logik (500ms Intervall) zur CPU/Batterie-Entlastung.
+- Persistenter Owner-Template-Speicher:
+  - `IdentityRepository` erweitert um Save/Load fuer Owner Face Vector.
+  - `SecureIdentityRepository` persistiert den Vektor in Secure Storage.
+- Neue camera-first Seite:
+  - `AuthPage` als neuer Startscreen.
+  - Vollbildkamera + lebender Face-Reticle.
+  - Setup-Button fuer Erstnutzer.
+  - Auto-Auth bei Match ohne Button.
+  - Haptic + System-Click bei erfolgreichem Unlock.
+- UI-Freischaltung nach Auth:
+  - `Capture Moment` Call-to-Action (placeholder)
+  - Map-Shortcut (placeholder)
+  - Profilindikator oben rechts.
+- App-Wiring:
+  - `MalaqaApp` nutzt `BlocProvider` fuer `AuthCubit`.
+  - `AuthPage` ist neue `home`.
+- Tests erweitert:
+  - neuer `auth_cubit_test.dart`
+  - `secure_identity_repository_test.dart` um Owner-Vector Roundtrip erweitert.
+
+### Milestone I: The Meeting Capture
+
+Status: `abgeschlossen (MVP)`
+
+Umgesetzt:
+
+- Neuer `MeetingCubit` fuer den Begegnungs-Flow:
+  - `MeetingIdle`, `MeetingReady`, `MeetingCapturing`, `MeetingSuccess`, `MeetingError`
+  - framebasierte Owner/Guest-Erkennung im authentifizierten Zustand
+  - persistente Proof-Erzeugung mit lokaler Kettenfortsetzung.
+- `AuthPage` erweitert:
+  - zweites Gast-Reticle (Cyan)
+  - Capture-Button glowt/pulsiert nur in `MeetingReady`
+  - Success-Card als Bottom Sheet nach erfolgreichem Capture.
+- Datenfluss:
+  - `MeetingParticipantResolver` liefert jetzt auch Owner/Gast-Indizes zur UI-Zuordnung.
+  - bei Capture wird ein Proof gespeichert und die Chain lokal verlaengert.
+- MVP-Limitation explizit:
+  - Gast-Signatur wird lokal ueber einen Placeholder-Key simuliert,
+    bis echter P2P-Handshake (beidseitige Signatur) in Phase 2 voll integriert ist.
+- Tests erweitert:
+  - neuer `meeting_cubit_test.dart`.
+
+### Milestone J: The Journey Timeline (Denkarium)
+
+Status: `abgeschlossen (MVP)`
+
+Umgesetzt:
+
+- Neues Journey State-Management:
+  - `JourneyCubit` mit `JourneyLoading`, `JourneyLoaded`, `JourneyEmpty`, `JourneyError`.
+  - `loadJourney()` laedt Proofs aus `ChainRepository` und sortiert reverse-chronologisch.
+- Neue Journey-Ansicht:
+  - `JourneyPage` mit `AppBar("My Journey")` und `BlocBuilder`.
+  - Empty-State mit motivierendem Start-Hinweis.
+  - Error-State mit Retry.
+- Timeline-UI:
+  - neues Widget `MeetingTimelineItem` mit vertikaler Kettenlinie, Node und Event-Card.
+  - relative Zeitdarstellung via `timeago`.
+  - technischer Beweis als kurze Proof-ID (`hash-prefix`) sichtbar.
+  - staggered Entry-Animation pro Item (fade + slide).
+- Navigation:
+  - Map-Button im authentifizierten Bereich fuehrt jetzt zur `JourneyPage`.
+- Tests erweitert:
+  - neuer `journey_cubit_test.dart`.
+
+### Milestone K: The Profile & Stats Engine
+
+Status: `abgeschlossen (MVP)`
+
+Umgesetzt:
+
+- Statistik-Engine in der Domain:
+  - `StatisticsService` mit:
+    - `calculateTotalDistance(...)` via Haversine-Formel
+    - `countUniquePeople(...)` (Public-Key-basiert, Owner ausgeschlossen)
+    - `calculateStreak(...)` (aufeinanderfolgende Meeting-Tage)
+    - `buildStats(...)` als aggregierter Einstiegspunkt.
+- Gamification-Layer:
+  - `badge_definitions.dart` mit Badge-Metadaten (`First Contact`, `Social Butterfly`, `Explorer`, `Marathon`).
+  - `BadgeManager` mit Unlock-Logik und Fortschrittsberechnung pro Badge.
+- Profil-State-Management:
+  - neuer `ProfileCubit` mit `ProfileLoading`, `ProfileLoaded`, `ProfileError`.
+  - laedt Identity + Proofs, berechnet Stats und Badges, liefert UI-fertigen Zustand.
+- Profil-UI:
+  - neue `ProfilePage` mit:
+    - Header (Initials/Name)
+    - Stats-Karten (Meetings, Distanz, People)
+    - Streak-Anzeige
+    - Badge-Grid mit unlocked/locked Visualisierung und Detail-Bottom-Sheet.
+- Navigation:
+  - Profilbild oben rechts im authentifizierten Bereich oeffnet jetzt `ProfilePage`.
+- Tests erweitert:
+  - `statistics_service_test.dart`
+  - `badge_manager_test.dart`
 
 ### Implementierungsstand nach Modulen (Detail)
 
@@ -265,6 +445,12 @@ Umgesetzt:
 - `lib/domain/services/meeting_handshake_service.dart`: Erstellung eines signierten Proofs fuer zwei Teilnehmer umgesetzt.
 - `lib/domain/services/chain_manager.dart`: Genesis-Regel + Link-Validierung + Proof-Validierung fuer die gesamte Kette umgesetzt.
 - `lib/domain/services/face_matcher_service.dart`: Cosine Similarity und Match-Entscheidung umgesetzt.
+- `lib/domain/services/statistics_service.dart`: Distanz-, Unique-People- und Streak-Berechnung fuer Gamification/Profile.
+
+`lib/domain/gamification/`:
+
+- `lib/domain/gamification/badge_definitions.dart`: Badge-Metadaten und Schwellenwerte.
+- `lib/domain/gamification/badge_manager.dart`: Unlock- und Fortschrittslogik fuer Badges.
 
 `lib/domain/interfaces/`:
 
@@ -292,6 +478,8 @@ Umgesetzt:
 - `test/isar_chain_repository_test.dart`: Isar Persistenz + Integritaetsfilterung bei Manipulation vorhanden.
 - `test/service_locator_test.dart`: Milestone-C DI-Registrierung und Lazy-Singleton-Verhalten vorhanden.
 - `test/widget_test.dart`: Flutter Test-Skeleton vorhanden.
+- `test/statistics_service_test.dart`: Distanz-, Zero-Location- und Unique-People-Statistiktests.
+- `test/badge_manager_test.dart`: Badge-Unlock-Logik fuer leeres Profil und Erst-Meeting.
 
 `platform`:
 
@@ -459,9 +647,30 @@ Milestone G:
 
 - `abgeschlossen` Persistence & Secure Storage (Secure Identity + Isar Chain Repository + Integritaetschecks).
 
+Milestone G-2:
+
+- `abgeschlossen` Headless Logic Verification (Logger, mocked hardware edges, echter Roundtrip-Test).
+
+Milestone G-3:
+
+- `abgeschlossen` Multi-Face Logic (scanFaces, owner/guest resolver, Duo-Roundtrip-Test).
+
 Milestone H:
 
-- Proof-Timeline UI + persistente Chain-Ansichten in der App.
+- `abgeschlossen (erste Version)` Camera-first UX Layer (Magic Mirror) mit Auto-Auth und UI-Unlock.
+- offen innerhalb H: Placeholder-Controls zu echten Capture-/Map-Features ausbauen.
+
+Milestone I:
+
+- `abgeschlossen (MVP)` Meeting Capture (Owner+Guest-Erkennung, Capture-Trigger, Proof-Speicherung, Success-Feedback).
+
+Milestone J:
+
+- `abgeschlossen (MVP)` Journey Timeline mit persistenter, visualisierter Begegnungskette.
+
+Milestone K:
+
+- `abgeschlossen (MVP)` Profile & Stats Engine (Statistiken, Badge-System, Profile-UI, Navigation).
 
 ---
 
