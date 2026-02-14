@@ -72,3 +72,20 @@ Ein Task ist fertig, wenn:
 1. `MALAQA.md` lesen (Abschnitt "Vorschlag fuer konkrete naechste Milestones").
 2. Einen Milestone waehlen.
 3. Mit einem kleinen, testgetriebenen Teil starten.
+
+## 9. User-Taktik: Stop-&-Go (verbindlich)
+
+Ab sofort gilt fuer alle Milestones und Sub-Tasks:
+
+1. Nach jedem einzelnen Sub-Task: STOPP.
+2. Kurz berichten:
+   - Was wurde umgesetzt?
+   - Welche Tests/Laufchecks wurden ausgefuehrt?
+   - Welches Risiko/Offene Fragen bleiben?
+3. Explizit auf User-Go warten, bevor der naechste Sub-Task startet.
+
+Zusatzregel:
+
+- Wenn ein Prompt mehrere grosse Milestones in einem Schritt fordert, aktiv
+  bremsen und um Verifikation des aktuellen Teils bitten:
+  "Stopp, Gemini. Lass uns erst X verifizieren, bevor wir Y bauen."
