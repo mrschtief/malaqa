@@ -1,6 +1,6 @@
 # malaqa
 
-Pure Dart core library for the `malaqa` decentralized meeting chain protocol.
+Flutter + Dart core project for the `malaqa` decentralized meeting chain protocol.
 
 ## Scope (Phase 0)
 
@@ -20,7 +20,7 @@ Pure Dart core library for the `malaqa` decentralized meeting chain protocol.
 ## Run
 
 ```bash
-dart pub get
-dart test
-dart run bin/main.dart
+flutter pub get
+flutter test
+flutter run
 ```

@@ -1,11 +1,14 @@
 export 'core/crypto/ed25519_crypto_provider.dart';
+export 'core/di/service_locator.dart';
 export 'core/identity.dart';
 export 'core/interfaces/crypto_provider.dart';
 export 'domain/entities/face_vector.dart';
 export 'domain/entities/location_point.dart';
 export 'domain/entities/meeting_proof.dart';
 export 'domain/entities/participant_signature.dart';
+export 'domain/interfaces/biometric_scanner.dart';
 export 'domain/services/chain_manager.dart';
+export 'domain/services/face_matcher_service.dart';
 export 'domain/services/meeting_handshake_service.dart';
 export 'domain/use_cases/create_meeting_proof_use_case.dart';
 export 'domain/use_cases/validate_chain_use_case.dart';

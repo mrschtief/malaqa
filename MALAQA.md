@@ -97,6 +97,44 @@ Umgesetzt:
   - Manipulationsfall fuer Verify
   - validierter und gebrochener Chain-Fall fuer Validate
 
+### Milestone C: Flutter Integration (Infrastruktur)
+
+Status: `abgeschlossen`
+
+Umgesetzt:
+
+- Projekt auf Flutter-Toolchain erweitert (`flutter`/`flutter_test` in `pubspec.yaml`).
+- Minimaler Flutter-App-Entry erstellt:
+  - `lib/main.dart`
+  - `lib/presentation/app/malaqa_app.dart`
+- Clean-Architecture Zielstruktur fuer naechste Phasen angelegt:
+  - `lib/presentation/`
+  - `lib/data/`
+- Dependency Injection mit `get_it` eingefuehrt:
+  - `lib/core/di/service_locator.dart`
+  - zentrale Registrierungen als Lazy Singletons fuer Core-/Domain-Services.
+- DI-Integration testseitig abgesichert:
+  - `test/service_locator_test.dart`
+
+### Milestone D: FaceMatcher Domain Logic
+
+Status: `abgeschlossen`
+
+Umgesetzt:
+
+- `FaceMatcherService` mit Cosine Similarity:
+  - `compare(FaceVector v1, FaceVector v2)`
+  - `isMatch(FaceVector v1, FaceVector v2, {double threshold = 0.8})`
+  - robust gegen Nullvektor und numerische Grenzfaelle.
+- TDD-Testabdeckung fuer FaceMatcher:
+  - identische Vektoren -> ~1.0
+  - orthogonale Vektoren -> ~0.0
+  - aehnliche Vektoren -> hoher Score
+  - Nullvektor-Fall -> 0.0
+  - Datei: `test/face_matcher_service_test.dart`
+- Hardware-Abstraktion fuer spaetere Kamera/ML-Adapter:
+  - `lib/domain/interfaces/biometric_scanner.dart`
+
 ### Implementierungsstand nach Modulen (Detail)
 
 `lib/core/`:
@@ -116,6 +154,11 @@ Umgesetzt:
 
 - `lib/domain/services/meeting_handshake_service.dart`: Erstellung eines signierten Proofs fuer zwei Teilnehmer umgesetzt.
 - `lib/domain/services/chain_manager.dart`: Genesis-Regel + Link-Validierung + Proof-Validierung fuer die gesamte Kette umgesetzt.
+- `lib/domain/services/face_matcher_service.dart`: Cosine Similarity und Match-Entscheidung umgesetzt.
+
+`lib/domain/interfaces/`:
+
+- `lib/domain/interfaces/biometric_scanner.dart`: generisches Scanner-Interface als Adaptergrenze vorhanden.
 
 `lib/domain/use_cases/`:
 
@@ -127,6 +170,8 @@ Umgesetzt:
 
 - `test/magellan_core_test.dart`: Phase-0 Kernlogik sowie Milestone-A-Tests vorhanden.
 - `test/domain_use_cases_test.dart`: Milestone-B UseCase-Tests vorhanden.
+- `test/face_matcher_service_test.dart`: Milestone-D Mathematik- und Schwellwerttests vorhanden.
+- `test/service_locator_test.dart`: Milestone-C DI-Registrierung und Lazy-Singleton-Verhalten vorhanden.
 
 `bin/`:
 
@@ -209,15 +254,15 @@ Offen und konkret noch zu bauen:
 
 `Phase 1 / Flutter-Grundgeruest`:
 
-- Flutter-App im Repo anlegen und `malaqa` Core-Library sauber einbinden.
-- Erste App-Schichten (`presentation`, `application`) aufsetzen.
-- Build-/Test-Lauf fuer Flutter separat absichern.
+- Routing/App-Navigation aufbauen (aktuell nur Minimal-App-Entry).
+- Erstes State-Management fuer Feature-Flow festlegen und integrieren.
+- CI-Lauf fuer `flutter test` + Format/Lints etablieren.
 
 `Phase 1 / Face Pipeline`:
 
-- Face-Detection Adapter definieren (zuerst ML Kit, spaeter austauschbar).
+- Konkreten Face-Detection Adapter definieren (zuerst ML Kit, spaeter austauschbar).
 - Embedding-Erzeugung als Interface mit austauschbarer Implementierung.
-- Vektorvergleich (Cosine Similarity) als eigener, getesteter Service.
+- `BiometricScanner`-Interface mit echten Input-Typen (Kamera-Frame) spezialisieren.
 
 `Phase 2 / Lokaler Handshake ueber zwei Geraete`:
 
@@ -271,11 +316,11 @@ Milestone B:
 
 Milestone C:
 
-- Flutter-App initialisieren und Core-Library als Abhaengigkeit einbinden.
+- `abgeschlossen` Flutter-App initialisieren und Core-Library als Abhaengigkeit einbinden.
 
 Milestone D:
 
-- FaceMatcher (Cosine Similarity) als eigenstaendige, getestete Domain-Komponente.
+- `abgeschlossen` FaceMatcher (Cosine Similarity) als eigenstaendige, getestete Domain-Komponente.
 
 Milestone E:
 

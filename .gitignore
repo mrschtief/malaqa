@@ -17,7 +17,6 @@ coverage/
 # Pub
 .pub/
 .pub-cache/
-pubspec.lock
 
 # Flutter platform directories (generated)
 android/.gradle/
