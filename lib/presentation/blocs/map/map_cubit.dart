@@ -104,9 +104,13 @@ class MapCubit extends Cubit<MapState> {
         );
       }
 
-      final polylines = points.length >= 2
-          ? [MapPolylineData(points: points)]
-          : const <MapPolylineData>[];
+      final polylines =
+          points.isNotEmpty ? [MapPolylineData(points: points)] : const [];
+
+      AppLogger.log(
+        'MAP',
+        'Updating layers... Markers: ${markers.length}, Polylines: ${polylines.length}',
+      );
 
       emit(
         MapLoaded(
