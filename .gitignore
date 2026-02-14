@@ -3,8 +3,10 @@
 Thumbs.db
 *.swp
 *.swo
+*.iml
 .idea/
 .vscode/
+flutter_*.log
 
 # Dart / Flutter build outputs
 .dart_tool/
@@ -23,7 +25,14 @@ android/.gradle/
 android/app/debug/
 android/app/profile/
 android/app/release/
+android/local.properties
+android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 ios/Flutter/.last_build_id
+ios/Flutter/ephemeral/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
 ios/Pods/
 ios/.symlinks/
 macos/Flutter/ephemeral/

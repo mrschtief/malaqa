@@ -1,3 +1,4 @@
+import 'package:camera/camera.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:malaqa/malaqa.dart';
 
@@ -11,9 +12,12 @@ void main() {
     final handshakeB = getIt<MeetingHandshakeService>();
     final chainA = getIt<ChainManager>();
     final chainB = getIt<ChainManager>();
+    final scannerA = getIt<BiometricScanner<CameraImage>>();
+    final scannerB = getIt<BiometricScanner<CameraImage>>();
 
     expect(cryptoA, same(cryptoB));
     expect(handshakeA, same(handshakeB));
     expect(chainA, same(chainB));
+    expect(scannerA, same(scannerB));
   });
 }

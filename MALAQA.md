@@ -30,8 +30,9 @@ Ziele:
 Repository-Layers:
 
 - `lib/core/`: Krypto-Interfaces, Ed25519/SHA-256 Provider, Identity.
+- `lib/data/`: Adapter fuer Kamera/IO und spaetere Persistenz/Netzwerkquellen.
 - `lib/domain/entities/`: `FaceVector`, `MeetingProof`, `LocationPoint`, `ParticipantSignature`.
-- `lib/domain/services/`: Handshake-Erzeugung und Chain-Validierung.
+- `lib/domain/services/`: Handshake, Chain und Face-Matching Logik.
 - `test/`: Kernlogik-Tests.
 - `bin/`: Laufbare CLI-Demo.
 
@@ -135,6 +136,38 @@ Umgesetzt:
 - Hardware-Abstraktion fuer spaetere Kamera/ML-Adapter:
   - `lib/domain/interfaces/biometric_scanner.dart`
 
+### Milestone E: Mirror Loop (Kamera + Real-Time Detection Pipeline)
+
+Status: `abgeschlossen`
+
+Umgesetzt:
+
+- Flutter-Projektplattformen fuer Mobile initialisiert:
+  - `android/`
+  - `ios/`
+- Kamera- und Detection-Dependencies integriert:
+  - `camera`
+  - `google_mlkit_face_detection`
+  - `permission_handler`
+- Presentation-Layer fuer Mirror POC:
+  - `lib/presentation/pages/mirror_page.dart`
+  - Vollbild-Kamera-Preview
+  - Face Bounding Box Overlay
+  - Button `Scan Me`
+  - Statusanzeige (`Similarity: 0.0` Basisfluss)
+- Data-Layer Scanner-Implementierung:
+  - `lib/data/datasources/camera_biometric_scanner.dart`
+  - implementiert `BiometricScanner<CameraImage>`
+  - liefert fuer Milestone E einen Dummy-Embedding-Vector (512)
+  - markierter TODO fuer spaeteren TFLite-Inference-Call
+- DI-Wiring fuer Scanner:
+  - Registrierung als Lazy Singleton in `lib/core/di/service_locator.dart`
+- App-Wiring:
+  - `lib/presentation/app/malaqa_app.dart` zeigt jetzt `MirrorPage`
+- Mobile Permissions gesetzt:
+  - Android: `android/app/src/main/AndroidManifest.xml` mit `CAMERA`
+  - iOS: `ios/Runner/Info.plist` mit `NSCameraUsageDescription`
+
 ### Implementierungsstand nach Modulen (Detail)
 
 `lib/core/`:
@@ -142,6 +175,11 @@ Umgesetzt:
 - `lib/core/interfaces/crypto_provider.dart`: Interface fuer Random, Hash, Signatur, Verifikation ist vorhanden und stabil.
 - `lib/core/crypto/ed25519_crypto_provider.dart`: konkrete Implementierung fuer Ed25519 + SHA-256 + Utility-Funktionen ist umgesetzt.
 - `lib/core/identity.dart`: Key-Pair-Erzeugung und Signieren ueber gekapselten Private Key ist umgesetzt.
+- `lib/core/di/service_locator.dart`: DI-Setup mit Lazy Singletons inkl. Camera Scanner Registrierung ist umgesetzt.
+
+`lib/data/`:
+
+- `lib/data/datasources/camera_biometric_scanner.dart`: Kamera-Frame zu Dummy-Embedding Pipeline (TFLite-ready Skeleton) ist umgesetzt.
 
 `lib/domain/entities/`:
 
@@ -172,6 +210,12 @@ Umgesetzt:
 - `test/domain_use_cases_test.dart`: Milestone-B UseCase-Tests vorhanden.
 - `test/face_matcher_service_test.dart`: Milestone-D Mathematik- und Schwellwerttests vorhanden.
 - `test/service_locator_test.dart`: Milestone-C DI-Registrierung und Lazy-Singleton-Verhalten vorhanden.
+- `test/widget_test.dart`: Flutter Test-Skeleton vorhanden.
+
+`platform`:
+
+- `android/`: lauffaehiges Android Flutter Projekt inklusive Camera Permission.
+- `ios/`: lauffaehiges iOS Flutter Projekt inklusive Camera Usage Description.
 
 `bin/`:
 
@@ -260,9 +304,9 @@ Offen und konkret noch zu bauen:
 
 `Phase 1 / Face Pipeline`:
 
-- Konkreten Face-Detection Adapter definieren (zuerst ML Kit, spaeter austauschbar).
-- Embedding-Erzeugung als Interface mit austauschbarer Implementierung.
-- `BiometricScanner`-Interface mit echten Input-Typen (Kamera-Frame) spezialisieren.
+- ML Kit Detection aus `MirrorPage` in einen separaten Data Adapter extrahieren.
+- Echten Embedding-Extractor per TFLite (MobileFaceNet) implementieren.
+- `Scan Me` mit echter Vergleichslogik gegen gespeicherten Referenzvektor verdrahten.
 
 `Phase 2 / Lokaler Handshake ueber zwei Geraete`:
 
@@ -323,6 +367,10 @@ Milestone D:
 - `abgeschlossen` FaceMatcher (Cosine Similarity) als eigenstaendige, getestete Domain-Komponente.
 
 Milestone E:
+
+- `abgeschlossen` Mirror Loop (Kamera-Preview, Face Detection Overlay, Scanner-Wiring, Permission Setup).
+
+Milestone F:
 
 - Persistenzadapter fuer lokale Chain-Speicherung mit Integritaetschecks.
 
