@@ -51,6 +51,7 @@ class _AuthPageState extends State<AuthPage>
   CameraImage? _latestFrame;
   List<Rect> _latestFaceBoxes = const <Rect>[];
   Size? _latestImageSize;
+  int _latestImageRotationDegrees = 0;
   String _cameraStatus = 'Starting camera...';
   DateTime? _lastScannerHeartbeatAt;
   DateTime? _lastInputImageIssueAt;
@@ -267,6 +268,7 @@ class _AuthPageState extends State<AuthPage>
 
       setState(() {
         _latestFaceBoxes = List<Rect>.unmodifiable(sortedBoxes);
+        _latestImageRotationDegrees = rotationDegrees ?? 0;
       });
 
       final state = context.read<AuthCubit>().state;
@@ -671,6 +673,15 @@ class _AuthPageState extends State<AuthPage>
     AppLogger.error('SCANNER', 'Camera controller warning: $description');
   }
 
+  bool _isBiometricModuleLoadingError(String errorText) {
+    final normalized = errorText.toLowerCase();
+    return normalized.contains('libtensorflowlite_jni.so') ||
+        normalized.contains('biometrie-modul wird geladen') ||
+        (normalized.contains('tensorflowlite') &&
+            normalized.contains('load')) ||
+        normalized.contains('dlopen failed');
+  }
+
   BiometricScanRequest<CameraImage> _scanRequest(
     CameraImage image, {
     FaceBounds? faceBounds,
@@ -741,7 +752,9 @@ class _AuthPageState extends State<AuthPage>
           return;
         }
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Face vector capture failed.')),
+          const SnackBar(
+            content: Text('Gesicht im Fokus - Halten Sie kurz still...'),
+          ),
         );
         return;
       }
@@ -749,6 +762,22 @@ class _AuthPageState extends State<AuthPage>
       await context.read<AuthCubit>().createIdentityFromVector(
             ownerVector: ownerVector,
           );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'SCANNER',
+        'Owner vector capture failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) {
+        return;
+      }
+      final message = _isBiometricModuleLoadingError(error.toString())
+          ? 'Biometrie-Modul wird geladen... bitte warten oder App neu starten.'
+          : 'Gesicht im Fokus - Halten Sie kurz still...';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -903,6 +932,8 @@ class _AuthPageState extends State<AuthPage>
                                   painter: _ReticlePainter(
                                     faceBoxes: _latestFaceBoxes,
                                     imageSize: _latestImageSize,
+                                    imageRotationDegrees:
+                                        _latestImageRotationDegrees,
                                     isFrontCamera: _cameraController!
                                             .description.lensDirection ==
                                         CameraLensDirection.front,
@@ -918,6 +949,8 @@ class _AuthPageState extends State<AuthPage>
                                 painter: _DebugFaceOverlayPainter(
                                   faceBoxes: _latestFaceBoxes,
                                   imageSize: _latestImageSize!,
+                                  imageRotationDegrees:
+                                      _latestImageRotationDegrees,
                                   isFrontCamera: _cameraController!
                                           .description.lensDirection ==
                                       CameraLensDirection.front,
@@ -928,6 +961,8 @@ class _AuthPageState extends State<AuthPage>
                                 painter: _GuestReticlePainter(
                                   guestBounds: guestBounds,
                                   imageSize: _latestImageSize!,
+                                  imageRotationDegrees:
+                                      _latestImageRotationDegrees,
                                   isFrontCamera: _cameraController!
                                           .description.lensDirection ==
                                       CameraLensDirection.front,
@@ -939,6 +974,8 @@ class _AuthPageState extends State<AuthPage>
                               _GuestLivenessBadge(
                                 guestBounds: meetingState.guestBounds,
                                 imageSize: _latestImageSize!,
+                                imageRotationDegrees:
+                                    _latestImageRotationDegrees,
                                 isFrontCamera: _cameraController!
                                         .description.lensDirection ==
                                     CameraLensDirection.front,
@@ -1224,15 +1261,72 @@ class _AuthenticatedControls extends StatelessWidget {
   }
 }
 
+Rect _mapImageRectToCanvas({
+  required Rect imageRect,
+  required Size imageSize,
+  required Size canvasSize,
+  required int imageRotationDegrees,
+  required bool isFrontCamera,
+}) {
+  final normalizedRotation = ((imageRotationDegrees % 360) + 360) % 360;
+  final isQuarterTurn = normalizedRotation == 90 || normalizedRotation == 270;
+  final rotatedImageWidth = isQuarterTurn ? imageSize.height : imageSize.width;
+  final rotatedImageHeight = isQuarterTurn ? imageSize.width : imageSize.height;
+
+  final rotatedRect = switch (normalizedRotation) {
+    90 => Rect.fromLTWH(
+        imageSize.height - imageRect.bottom,
+        imageRect.left,
+        imageRect.height,
+        imageRect.width,
+      ),
+    180 => Rect.fromLTWH(
+        imageSize.width - imageRect.right,
+        imageSize.height - imageRect.bottom,
+        imageRect.width,
+        imageRect.height,
+      ),
+    270 => Rect.fromLTWH(
+        imageRect.top,
+        imageSize.width - imageRect.right,
+        imageRect.height,
+        imageRect.width,
+      ),
+    _ => imageRect,
+  };
+
+  final scaleX = canvasSize.width / rotatedImageWidth;
+  final scaleY = canvasSize.height / rotatedImageHeight;
+  var mappedRect = Rect.fromLTWH(
+    rotatedRect.left * scaleX,
+    rotatedRect.top * scaleY,
+    rotatedRect.width * scaleX,
+    rotatedRect.height * scaleY,
+  );
+
+  if (isFrontCamera) {
+    mappedRect = Rect.fromLTRB(
+      canvasSize.width - mappedRect.right,
+      mappedRect.top,
+      canvasSize.width - mappedRect.left,
+      mappedRect.bottom,
+    );
+  }
+
+  return mappedRect;
+}
+
 class _DebugFaceOverlayPainter extends CustomPainter {
   _DebugFaceOverlayPainter({
     required this.faceBoxes,
     required this.imageSize,
+    required this.imageRotationDegrees,
     required this.isFrontCamera,
   });
 
   final List<Rect> faceBoxes;
   final Size imageSize;
+  final int imageRotationDegrees;
   final bool isFrontCamera;
 
   @override
@@ -1243,22 +1337,13 @@ class _DebugFaceOverlayPainter extends CustomPainter {
       ..color = const Color(0xFFFF3B30).withValues(alpha: 0.9);
 
     for (final face in faceBoxes) {
-      var rect = Rect.fromLTWH(
-        face.left * (size.width / imageSize.width),
-        face.top * (size.height / imageSize.height),
-        face.width * (size.width / imageSize.width),
-        face.height * (size.height / imageSize.height),
+      final rect = _mapImageRectToCanvas(
+        imageRect: face,
+        imageSize: imageSize,
+        canvasSize: size,
+        imageRotationDegrees: imageRotationDegrees,
+        isFrontCamera: isFrontCamera,
       );
-
-      if (isFrontCamera) {
-        rect = Rect.fromLTRB(
-          size.width - rect.right,
-          rect.top,
-          size.width - rect.left,
-          rect.bottom,
-        );
-      }
-
       canvas.drawRRect(
         RRect.fromRectAndRadius(rect.inflate(6), const Radius.circular(12)),
         paint,
@@ -1270,6 +1355,7 @@ class _DebugFaceOverlayPainter extends CustomPainter {
   bool shouldRepaint(covariant _DebugFaceOverlayPainter oldDelegate) {
     return oldDelegate.faceBoxes != faceBoxes ||
         oldDelegate.imageSize != imageSize ||
+        oldDelegate.imageRotationDegrees != imageRotationDegrees ||
         oldDelegate.isFrontCamera != isFrontCamera;
   }
 }
@@ -1278,31 +1364,31 @@ class _GuestReticlePainter extends CustomPainter {
   _GuestReticlePainter({
     required this.guestBounds,
     required this.imageSize,
+    required this.imageRotationDegrees,
     required this.isFrontCamera,
     required this.isVerified,
   });
 
   final FaceBounds guestBounds;
   final Size imageSize;
+  final int imageRotationDegrees;
   final bool isFrontCamera;
   final bool isVerified;
 
   @override
   void paint(Canvas canvas, Size size) {
-    var rect = Rect.fromLTWH(
-      guestBounds.left * (size.width / imageSize.width),
-      guestBounds.top * (size.height / imageSize.height),
-      guestBounds.width * (size.width / imageSize.width),
-      guestBounds.height * (size.height / imageSize.height),
+    final rect = _mapImageRectToCanvas(
+      imageRect: Rect.fromLTWH(
+        guestBounds.left,
+        guestBounds.top,
+        guestBounds.width,
+        guestBounds.height,
+      ),
+      imageSize: imageSize,
+      canvasSize: size,
+      imageRotationDegrees: imageRotationDegrees,
+      isFrontCamera: isFrontCamera,
     );
-    if (isFrontCamera) {
-      rect = Rect.fromLTRB(
-        size.width - rect.right,
-        rect.top,
-        size.width - rect.left,
-        rect.bottom,
-      );
-    }
 
     final paint = Paint()
       ..style = PaintingStyle.stroke
@@ -1319,6 +1405,7 @@ class _GuestReticlePainter extends CustomPainter {
   bool shouldRepaint(covariant _GuestReticlePainter oldDelegate) {
     return oldDelegate.guestBounds != guestBounds ||
         oldDelegate.imageSize != imageSize ||
+        oldDelegate.imageRotationDegrees != imageRotationDegrees ||
         oldDelegate.isFrontCamera != isFrontCamera ||
         oldDelegate.isVerified != isVerified;
   }
@@ -1328,6 +1415,7 @@ class _GuestLivenessBadge extends StatelessWidget {
   const _GuestLivenessBadge({
     required this.guestBounds,
     required this.imageSize,
+    required this.imageRotationDegrees,
     required this.isFrontCamera,
     required this.isVerified,
     required this.prompt,
@@ -1335,6 +1423,7 @@ class _GuestLivenessBadge extends StatelessWidget {
 
   final FaceBounds guestBounds;
   final Size imageSize;
+  final int imageRotationDegrees;
   final bool isFrontCamera;
   final bool isVerified;
   final String prompt;
@@ -1342,21 +1431,18 @@ class _GuestLivenessBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final previewSize = MediaQuery.of(context).size;
-    var rect = Rect.fromLTWH(
-      guestBounds.left * (previewSize.width / imageSize.width),
-      guestBounds.top * (previewSize.height / imageSize.height),
-      guestBounds.width * (previewSize.width / imageSize.width),
-      guestBounds.height * (previewSize.height / imageSize.height),
+    final rect = _mapImageRectToCanvas(
+      imageRect: Rect.fromLTWH(
+        guestBounds.left,
+        guestBounds.top,
+        guestBounds.width,
+        guestBounds.height,
+      ),
+      imageSize: imageSize,
+      canvasSize: previewSize,
+      imageRotationDegrees: imageRotationDegrees,
+      isFrontCamera: isFrontCamera,
     );
-
-    if (isFrontCamera) {
-      rect = Rect.fromLTRB(
-        previewSize.width - rect.right,
-        rect.top,
-        previewSize.width - rect.left,
-        rect.bottom,
-      );
-    }
 
     final left = rect.left.clamp(8.0, previewSize.width - 180);
     final top = (rect.top - 34).clamp(10.0, previewSize.height - 80);
@@ -1406,6 +1492,7 @@ class _ReticlePainter extends CustomPainter {
   _ReticlePainter({
     required this.faceBoxes,
     required this.imageSize,
+    required this.imageRotationDegrees,
     required this.isFrontCamera,
     required this.color,
     required this.pulse,
@@ -1413,6 +1500,7 @@ class _ReticlePainter extends CustomPainter {
 
   final List<Rect> faceBoxes;
   final Size? imageSize;
+  final int imageRotationDegrees;
   final bool isFrontCamera;
   final Color color;
   final double pulse;
@@ -1452,22 +1540,13 @@ class _ReticlePainter extends CustomPainter {
     }
 
     final face = faceBoxes.first;
-    var rect = Rect.fromLTWH(
-      face.left * (canvasSize.width / imageSize!.width),
-      face.top * (canvasSize.height / imageSize!.height),
-      face.width * (canvasSize.width / imageSize!.width),
-      face.height * (canvasSize.height / imageSize!.height),
+    final rect = _mapImageRectToCanvas(
+      imageRect: face,
+      imageSize: imageSize!,
+      canvasSize: canvasSize,
+      imageRotationDegrees: imageRotationDegrees,
+      isFrontCamera: isFrontCamera,
     );
-
-    if (isFrontCamera) {
-      rect = Rect.fromLTRB(
-        canvasSize.width - rect.right,
-        rect.top,
-        canvasSize.width - rect.left,
-        rect.bottom,
-      );
-    }
-
     return rect.inflate(12);
   }
 
@@ -1475,6 +1554,7 @@ class _ReticlePainter extends CustomPainter {
   bool shouldRepaint(covariant _ReticlePainter oldDelegate) {
     return oldDelegate.faceBoxes != faceBoxes ||
         oldDelegate.imageSize != imageSize ||
+        oldDelegate.imageRotationDegrees != imageRotationDegrees ||
         oldDelegate.isFrontCamera != isFrontCamera ||
         oldDelegate.color != color ||
         oldDelegate.pulse != pulse;

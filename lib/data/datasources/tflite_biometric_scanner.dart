@@ -4,9 +4,19 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 
+import '../../core/utils/app_logger.dart';
 import '../../core/utils/image_converter.dart';
 import '../../domain/entities/face_vector.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
+
+class BiometricModuleLoadingException implements Exception {
+  const BiometricModuleLoadingException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 class TfliteBiometricScanner
     implements BiometricScanner<BiometricScanRequest<CameraImage>> {
@@ -66,7 +76,22 @@ class TfliteBiometricScanner
       final modelInput = _toModelInput(preProcessed);
       final outputBuffer = _createZeroTensor(outputTensorShape);
 
-      interpreter.run(modelInput, outputBuffer);
+      try {
+        interpreter.run(modelInput, outputBuffer);
+      } catch (error, stackTrace) {
+        if (_isNativeTfLiteLoadError(error)) {
+          AppLogger.error(
+            'SCANNER',
+            'TensorFlow Lite native runtime is not available during inference',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          throw const BiometricModuleLoadingException(
+            'Biometrie-Modul wird geladen... bitte warten oder App neu starten.',
+          );
+        }
+        rethrow;
+      }
       final embedding = _flattenOutput(outputBuffer);
       if (embedding.isEmpty) {
         continue;
@@ -82,7 +107,22 @@ class TfliteBiometricScanner
       return _interpreter!;
     }
     _interpreterLoading ??= _loadInterpreter();
-    _interpreter = await _interpreterLoading!;
+    try {
+      _interpreter = await _interpreterLoading!;
+    } catch (error, stackTrace) {
+      if (_isNativeTfLiteLoadError(error)) {
+        AppLogger.error(
+          'SCANNER',
+          'TensorFlow Lite native runtime failed to load',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        throw const BiometricModuleLoadingException(
+          'Biometrie-Modul wird geladen... bitte warten oder App neu starten.',
+        );
+      }
+      rethrow;
+    }
     return _interpreter!;
   }
 
@@ -92,6 +132,14 @@ class TfliteBiometricScanner
       options.useNnApiForAndroid = true;
     }
     return Interpreter.fromAsset(_modelAssetPath, options: options);
+  }
+
+  bool _isNativeTfLiteLoadError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('libtensorflowlite_jni.so') ||
+        message.contains('tensorflowlite_jni') ||
+        message.contains('dlopen failed') ||
+        message.contains('couldn\'t find "libtensorflowlite_jni.so"');
   }
 
   List<List<List<List<double>>>> _toModelInput(Float32List preProcessed) {
