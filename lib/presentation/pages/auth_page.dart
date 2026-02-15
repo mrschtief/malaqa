@@ -12,6 +12,7 @@ import '../../core/di/service_locator.dart';
 import '../../core/services/app_settings_service.dart';
 import '../../core/utils/app_logger.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
+import '../../domain/repositories/chain_repository.dart';
 import '../blocs/auth/auth_cubit.dart';
 import '../blocs/meeting/meeting_cubit.dart';
 import '../blocs/proximity/proximity_cubit.dart';
@@ -53,9 +54,6 @@ class _AuthPageState extends State<AuthPage>
   Size? _latestImageSize;
   int _latestImageRotationDegrees = 0;
   String _cameraStatus = 'Starting camera...';
-  DateTime? _lastScannerHeartbeatAt;
-  DateTime? _lastInputImageIssueAt;
-  DateTime? _lastNoFaceLogAt;
   DateTime? _lastWarmupFailureAt;
   DateTime? _lastConverterErrorAt;
   DateTime? _lastDetectorClosedLogAt;
@@ -83,10 +81,6 @@ class _AuthPageState extends State<AuthPage>
     AppLogger.log(
       'SCANNER',
       'FaceDetector created (mode=fast, classification=true).',
-    );
-    AppLogger.log(
-      'SCANNER',
-      'Deep debug heartbeat enabled (max 1 log/s).',
     );
     _initializeCamera();
     unawaited(context.read<AuthCubit>().checkIdentity());
@@ -237,26 +231,10 @@ class _AuthPageState extends State<AuthPage>
       final rotationDegrees = _resolvedRotationDegrees();
       final inputImage = _toInputImage(image);
       if (inputImage == null) {
-        _logScannerHeartbeat(
-          image: image,
-          hasInputImage: false,
-          rotationDegrees: rotationDegrees,
-          rawFaceCount: null,
-        );
         return;
       }
 
       final detectedFaces = await _detectFacesWithWarmup(inputImage);
-      _logScannerHeartbeat(
-        image: image,
-        hasInputImage: true,
-        rotationDegrees: rotationDegrees,
-        rawFaceCount: detectedFaces.length,
-        firstFace: detectedFaces.isEmpty ? null : detectedFaces.first,
-      );
-      if (detectedFaces.isEmpty) {
-        _logNoFaceDetected();
-      }
 
       final sortedFaces = [...detectedFaces]..sort(
           (a, b) => (b.boundingBox.width * b.boundingBox.height)
@@ -332,34 +310,25 @@ class _AuthPageState extends State<AuthPage>
 
   InputImage? _toInputImage(CameraImage image) {
     if (_cameraController == null) {
-      _logInputImageIssue('cameraController is null');
       return null;
     }
 
     final rotation = _resolvedInputImageRotation();
     if (rotation == null) {
-      _logInputImageIssue(
-          'Unsupported rotation for current device orientation');
       return null;
     }
 
     final rawFormat = image.format.raw;
     if (rawFormat is! int) {
-      _logInputImageIssue('Image format raw value is not int: $rawFormat');
       return null;
     }
     final format = InputImageFormatValue.fromRawValue(rawFormat);
     if (format == null) {
-      _logInputImageIssue('Unsupported input image format raw=$rawFormat');
       return null;
     }
 
     if (Platform.isIOS) {
       if (format != InputImageFormat.bgra8888 || image.planes.length != 1) {
-        _logInputImageIssue(
-          'iOS format mismatch. expected=bgra8888(1 plane), '
-          '${_cameraImageDebugInfo(image)}',
-        );
         return null;
       }
       final plane = image.planes.first;
@@ -375,7 +344,6 @@ class _AuthPageState extends State<AuthPage>
     }
 
     if (!Platform.isAndroid) {
-      _logInputImageIssue('Unsupported platform for camera stream conversion');
       return null;
     }
 
@@ -383,16 +351,10 @@ class _AuthPageState extends State<AuthPage>
         image.format.group == ImageFormatGroup.nv21 ||
         format == InputImageFormat.yv12) {
       if (image.planes.isEmpty) {
-        _logInputImageIssue(
-          'No planes available for NV21/YV12. ${_cameraImageDebugInfo(image)}',
-        );
         return null;
       }
       final plane = image.planes.first;
       if (plane.bytes.isEmpty) {
-        _logInputImageIssue(
-          'Primary plane empty for NV21/YV12. ${_cameraImageDebugInfo(image)}',
-        );
         return null;
       }
       return InputImage.fromBytes(
@@ -412,9 +374,6 @@ class _AuthPageState extends State<AuthPage>
         image.format.group == ImageFormatGroup.yuv420) {
       final nv21Bytes = _convertYuv420ToNv21(image);
       if (nv21Bytes == null || nv21Bytes.isEmpty) {
-        _logInputImageIssue(
-          'YUV_420_888 conversion to NV21 failed. ${_cameraImageDebugInfo(image)}',
-        );
         return null;
       }
       return InputImage.fromBytes(
@@ -428,8 +387,6 @@ class _AuthPageState extends State<AuthPage>
       );
     }
 
-    _logInputImageIssue(
-        'Android image format unsupported. ${_cameraImageDebugInfo(image)}');
     return null;
   }
 
@@ -599,59 +556,6 @@ class _AuthPageState extends State<AuthPage>
     }
   }
 
-  void _logScannerHeartbeat({
-    required CameraImage image,
-    required bool hasInputImage,
-    required int? rotationDegrees,
-    required int? rawFaceCount,
-    Face? firstFace,
-  }) {
-    final now = DateTime.now();
-    if (_lastScannerHeartbeatAt != null &&
-        now.difference(_lastScannerHeartbeatAt!) < _scannerHeartbeatInterval) {
-      return;
-    }
-    _lastScannerHeartbeatAt = now;
-
-    final facesText = rawFaceCount == null ? 'n/a' : rawFaceCount.toString();
-    final cameraError = _cameraController?.value.errorDescription;
-    final firstFaceText = firstFace == null
-        ? 'none'
-        : 'box=${firstFace.boundingBox} '
-            'smile=${firstFace.smilingProbability} '
-            'leftEyeOpen=${firstFace.leftEyeOpenProbability} '
-            'rightEyeOpen=${firstFace.rightEyeOpenProbability}';
-    AppLogger.log(
-      'SCANNER',
-      'Heartbeat: image=${image.width}x${image.height} '
-          'inputImage=$hasInputImage rawFaces=$facesText '
-          'imageRotation=$rotationDegrees firstFace=$firstFaceText '
-          'format=${image.format.group}/${image.format.raw} '
-          'planes=${image.planes.length} '
-          'cameraError=${cameraError ?? 'none'}',
-    );
-  }
-
-  void _logNoFaceDetected() {
-    final now = DateTime.now();
-    if (_lastNoFaceLogAt != null &&
-        now.difference(_lastNoFaceLogAt!) < _scannerHeartbeatInterval) {
-      return;
-    }
-    _lastNoFaceLogAt = now;
-    AppLogger.log('SCANNER', 'Camera active, but ML Kit returns 0 faces.');
-  }
-
-  void _logInputImageIssue(String reason) {
-    final now = DateTime.now();
-    if (_lastInputImageIssueAt != null &&
-        now.difference(_lastInputImageIssueAt!) < _scannerHeartbeatInterval) {
-      return;
-    }
-    _lastInputImageIssueAt = now;
-    AppLogger.log('SCANNER', 'InputImage unavailable: $reason');
-  }
-
   void _logFaceDetectorClosedSkip() {
     final now = DateTime.now();
     if (_lastDetectorClosedLogAt != null &&
@@ -683,6 +587,28 @@ class _AuthPageState extends State<AuthPage>
         (normalized.contains('tensorflowlite') &&
             normalized.contains('load')) ||
         normalized.contains('dlopen failed');
+  }
+
+  bool _isDatabaseError(String errorText) {
+    final normalized = errorText.toLowerCase();
+    return normalized.contains('isar') ||
+        normalized.contains('database') ||
+        normalized.contains('db');
+  }
+
+  String _compactErrorMessage(Object error) {
+    final raw = error.toString().replaceAll('\n', ' ').trim();
+    if (raw.length <= 120) {
+      return raw;
+    }
+    return '${raw.substring(0, 117)}...';
+  }
+
+  Future<void> _ensureDatabaseReady() async {
+    if (!getIt.isRegistered<ChainRepository>()) {
+      return;
+    }
+    await getIt<ChainRepository>().getLatestProof();
   }
 
   BiometricScanRequest<CameraImage> _scanRequest(
@@ -761,24 +687,38 @@ class _AuthPageState extends State<AuthPage>
 
       final scanner =
           getIt<BiometricScanner<BiometricScanRequest<CameraImage>>>();
-      final ownerVector = await scanner.captureFace(
+      var captureTimedOut = false;
+      final ownerVector = await scanner
+          .captureFace(
         _scanRequest(
           frame,
           faceBounds: _faceBoundsFromRect(faceBoxes.first),
         ),
+      )
+          .timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {
+          captureTimedOut = true;
+          return null;
+        },
       );
       if (ownerVector == null) {
         if (!mounted) {
           return;
         }
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Gesicht im Fokus - Halten Sie kurz still...'),
+          SnackBar(
+            content: Text(
+              captureTimedOut
+                  ? 'Stillhalten-Timeout: Gesicht im Fokus - Halten Sie kurz still...'
+                  : 'Gesicht im Fokus - Halten Sie kurz still...',
+            ),
           ),
         );
         return;
       }
 
+      await _ensureDatabaseReady();
       await context.read<AuthCubit>().createIdentityFromVector(
             ownerVector: ownerVector,
           );
@@ -792,9 +732,12 @@ class _AuthPageState extends State<AuthPage>
       if (!mounted) {
         return;
       }
-      final message = _isBiometricModuleLoadingError(error.toString())
+      final errorText = error.toString();
+      final message = _isBiometricModuleLoadingError(errorText)
           ? 'Biometrie-Modul wird geladen... bitte warten oder App neu starten.'
-          : 'Gesicht im Fokus - Halten Sie kurz still...';
+          : _isDatabaseError(errorText)
+              ? 'DB Fehler: ${_compactErrorMessage(error)}'
+              : 'Gesicht im Fokus - Halten Sie kurz still...';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
@@ -1295,59 +1238,53 @@ Rect _mapImageRectToCanvas({
   final rotatedImageHeight = isQuarterTurn ? imageSize.width : imageSize.height;
   final scaleX = canvasSize.width / rotatedImageWidth;
   final scaleY = canvasSize.height / rotatedImageHeight;
+  final transformedRect = switch (normalizedRotation) {
+    90 => Rect.fromLTRB(
+        imageSize.height - imageRect.bottom,
+        imageRect.left,
+        imageSize.height - imageRect.top,
+        imageRect.right,
+      ),
+    180 => Rect.fromLTRB(
+        imageSize.width - imageRect.right,
+        imageSize.height - imageRect.bottom,
+        imageSize.width - imageRect.left,
+        imageSize.height - imageRect.top,
+      ),
+    270 => Rect.fromLTRB(
+        imageRect.top,
+        imageSize.width - imageRect.right,
+        imageRect.bottom,
+        imageSize.width - imageRect.left,
+      ),
+    _ => imageRect,
+  };
 
-  Offset rotatePoint(Offset point) {
-    return switch (normalizedRotation) {
-      90 => Offset(imageSize.height - point.dy, point.dx),
-      180 => Offset(imageSize.width - point.dx, imageSize.height - point.dy),
-      270 => Offset(point.dy, imageSize.width - point.dx),
-      _ => point,
-    };
-  }
+  var transformedLeft = transformedRect.left * scaleX;
+  final transformedTop = transformedRect.top * scaleY;
+  var transformedRight = transformedRect.right * scaleX;
+  final transformedBottom = transformedRect.bottom * scaleY;
 
-  Offset toCanvasPoint(Offset imagePoint) {
-    final rotatedPoint = rotatePoint(imagePoint);
-    var canvasX = rotatedPoint.dx * scaleX;
-    final canvasY = rotatedPoint.dy * scaleY;
-
-    if (isFrontCamera) {
-      if (normalizedRotation == 270) {
-        canvasX = canvasSize.width - (rotatedPoint.dx * scaleX);
-      } else {
-        canvasX = canvasSize.width - canvasX;
-      }
-    }
-
-    return Offset(canvasX, canvasY);
-  }
-
-  final corners = <Offset>[
-    toCanvasPoint(imageRect.topLeft),
-    toCanvasPoint(imageRect.topRight),
-    toCanvasPoint(imageRect.bottomLeft),
-    toCanvasPoint(imageRect.bottomRight),
-  ];
-
-  var minX = corners.first.dx;
-  var maxX = corners.first.dx;
-  var minY = corners.first.dy;
-  var maxY = corners.first.dy;
-  for (final point in corners.skip(1)) {
-    if (point.dx < minX) {
-      minX = point.dx;
-    }
-    if (point.dx > maxX) {
-      maxX = point.dx;
-    }
-    if (point.dy < minY) {
-      minY = point.dy;
-    }
-    if (point.dy > maxY) {
-      maxY = point.dy;
+  if (isFrontCamera) {
+    if (normalizedRotation == 270) {
+      final mirroredLeft = canvasSize.width - transformedRight;
+      final mirroredRight = canvasSize.width - transformedLeft;
+      transformedLeft = mirroredLeft;
+      transformedRight = mirroredRight;
+    } else {
+      final mirroredLeft = canvasSize.width - transformedRight;
+      final mirroredRight = canvasSize.width - transformedLeft;
+      transformedLeft = mirroredLeft;
+      transformedRight = mirroredRight;
     }
   }
 
-  return Rect.fromLTRB(minX, minY, maxX, maxY);
+  return Rect.fromLTRB(
+    transformedLeft,
+    transformedTop,
+    transformedRight,
+    transformedBottom,
+  );
 }
 
 class _DebugFaceOverlayPainter extends CustomPainter {

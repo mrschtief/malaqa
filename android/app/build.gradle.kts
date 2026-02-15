@@ -33,9 +33,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
-            keepDebugSymbols.add("**/*.so")
-            excludes.add("**/libisar.so")
-            pickFirsts.add("**/libisar.so")
+            pickFirsts.add("**/*.so")
         }
     }
 
