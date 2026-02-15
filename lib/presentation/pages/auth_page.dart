@@ -30,6 +30,14 @@ class AuthPage extends StatefulWidget {
 class _AuthPageState extends State<AuthPage>
     with SingleTickerProviderStateMixin {
   static const Duration _scannerHeartbeatInterval = Duration(seconds: 1);
+  static const Duration _streamRecoveryDelay = Duration(milliseconds: 350);
+  static const Map<DeviceOrientation, int> _orientations =
+      <DeviceOrientation, int>{
+    DeviceOrientation.portraitUp: 0,
+    DeviceOrientation.landscapeLeft: 90,
+    DeviceOrientation.portraitDown: 180,
+    DeviceOrientation.landscapeRight: 270,
+  };
 
   CameraController? _cameraController;
   late final FaceDetector _faceDetector;
@@ -48,7 +56,11 @@ class _AuthPageState extends State<AuthPage>
   DateTime? _lastInputImageIssueAt;
   DateTime? _lastNoFaceLogAt;
   DateTime? _lastWarmupFailureAt;
+  DateTime? _lastConverterErrorAt;
+  DateTime? _lastDetectorClosedLogAt;
   bool _isFaceDetectorWarmedUp = false;
+  bool _isFaceDetectorClosed = false;
+  bool _isRecoveringImageStream = false;
   String? _lastCameraErrorDescription;
 
   @override
@@ -121,9 +133,8 @@ class _AuthPageState extends State<AuthPage>
         selectedCamera,
         ResolutionPreset.medium,
         enableAudio: false,
-        imageFormatGroup: Platform.isIOS
-            ? ImageFormatGroup.bgra8888
-            : ImageFormatGroup.yuv420,
+        imageFormatGroup:
+            Platform.isIOS ? ImageFormatGroup.bgra8888 : ImageFormatGroup.nv21,
       );
       _cameraController = initializedController;
       initializedController.addListener(_logCameraControllerWarnings);
@@ -132,6 +143,11 @@ class _AuthPageState extends State<AuthPage>
       AppLogger.log(
         'SCANNER',
         'Camera initialized. preview=${initializedController.value.previewSize}',
+      );
+      AppLogger.log(
+        'SCANNER',
+        'Requested imageFormatGroup='
+            '${Platform.isIOS ? ImageFormatGroup.bgra8888 : ImageFormatGroup.nv21}',
       );
       await initializedController.startImageStream(_processCameraFrame);
       AppLogger.log(
@@ -200,7 +216,13 @@ class _AuthPageState extends State<AuthPage>
   }
 
   Future<void> _processCameraFrame(CameraImage image) async {
-    if (_isProcessingFrame || !mounted) {
+    if (_isProcessingFrame ||
+        _isRecoveringImageStream ||
+        !mounted ||
+        _isFaceDetectorClosed) {
+      if (_isFaceDetectorClosed) {
+        _logFaceDetectorClosedSkip();
+      }
       return;
     }
 
@@ -209,7 +231,7 @@ class _AuthPageState extends State<AuthPage>
     _isProcessingFrame = true;
 
     try {
-      final rotationDegrees = _cameraController?.description.sensorOrientation;
+      final rotationDegrees = _resolvedRotationDegrees();
       final inputImage = _toInputImage(image);
       if (inputImage == null) {
         _logScannerHeartbeat(
@@ -262,6 +284,36 @@ class _AuthPageState extends State<AuthPage>
             sortedFaces.map(_faceBoundsFromFace).toList(growable: false);
         unawaited(context.read<MeetingCubit>().processFrame(request, bounds));
       }
+    } on PlatformException catch (error, stackTrace) {
+      final isConverterError = error.code == 'InputImageConverterError' ||
+          (error.message?.contains('ImageFormat is not supported') ?? false);
+      if (isConverterError) {
+        final now = DateTime.now();
+        if (_lastConverterErrorAt == null ||
+            now.difference(_lastConverterErrorAt!) >=
+                _scannerHeartbeatInterval) {
+          _lastConverterErrorAt = now;
+          AppLogger.error(
+            'SCANNER',
+            'InputImage conversion failed on stream frame. '
+                '${_cameraImageDebugInfo(image)}',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+        unawaited(
+          _recoverFromInputImageConverterError(
+            reason: '${error.code}: ${error.message}',
+          ),
+        );
+        return;
+      }
+      AppLogger.error(
+        'SCANNER',
+        'PlatformException while processing frame',
+        error: error,
+        stackTrace: stackTrace,
+      );
     } catch (error, stackTrace) {
       AppLogger.error(
         'SCANNER',
@@ -275,19 +327,15 @@ class _AuthPageState extends State<AuthPage>
   }
 
   InputImage? _toInputImage(CameraImage image) {
-    final controller = _cameraController;
-    if (controller == null) {
+    if (_cameraController == null) {
       _logInputImageIssue('cameraController is null');
       return null;
     }
 
-    final rotation = InputImageRotationValue.fromRawValue(
-      controller.description.sensorOrientation,
-    );
+    final rotation = _resolvedInputImageRotation();
     if (rotation == null) {
       _logInputImageIssue(
-        'Unsupported rotation: ${controller.description.sensorOrientation}',
-      );
+          'Unsupported rotation for current device orientation');
       return null;
     }
 
@@ -302,26 +350,221 @@ class _AuthPageState extends State<AuthPage>
       return null;
     }
 
-    final bytes = _concatenatePlanes(image.planes);
-    if (bytes.isEmpty) {
-      _logInputImageIssue('Camera image bytes are empty');
+    if (Platform.isIOS) {
+      if (format != InputImageFormat.bgra8888 || image.planes.length != 1) {
+        _logInputImageIssue(
+          'iOS format mismatch. expected=bgra8888(1 plane), '
+          '${_cameraImageDebugInfo(image)}',
+        );
+        return null;
+      }
+      final plane = image.planes.first;
+      return InputImage.fromBytes(
+        bytes: plane.bytes,
+        metadata: InputImageMetadata(
+          size: Size(image.width.toDouble(), image.height.toDouble()),
+          rotation: rotation,
+          format: InputImageFormat.bgra8888,
+          bytesPerRow: plane.bytesPerRow,
+        ),
+      );
+    }
+
+    if (!Platform.isAndroid) {
+      _logInputImageIssue('Unsupported platform for camera stream conversion');
       return null;
     }
 
-    final metadata = InputImageMetadata(
-      size: Size(image.width.toDouble(), image.height.toDouble()),
-      rotation: rotation,
-      format: format,
-      bytesPerRow: image.planes.first.bytesPerRow,
-    );
+    if (format == InputImageFormat.nv21 ||
+        image.format.group == ImageFormatGroup.nv21 ||
+        format == InputImageFormat.yv12) {
+      if (image.planes.isEmpty) {
+        _logInputImageIssue(
+          'No planes available for NV21/YV12. ${_cameraImageDebugInfo(image)}',
+        );
+        return null;
+      }
+      final plane = image.planes.first;
+      if (plane.bytes.isEmpty) {
+        _logInputImageIssue(
+          'Primary plane empty for NV21/YV12. ${_cameraImageDebugInfo(image)}',
+        );
+        return null;
+      }
+      return InputImage.fromBytes(
+        bytes: plane.bytes,
+        metadata: InputImageMetadata(
+          size: Size(image.width.toDouble(), image.height.toDouble()),
+          rotation: rotation,
+          format: format == InputImageFormat.yv12
+              ? InputImageFormat.yv12
+              : InputImageFormat.nv21,
+          bytesPerRow: plane.bytesPerRow,
+        ),
+      );
+    }
 
-    return InputImage.fromBytes(
-      bytes: bytes,
-      metadata: metadata,
-    );
+    if (format == InputImageFormat.yuv_420_888 ||
+        image.format.group == ImageFormatGroup.yuv420) {
+      final nv21Bytes = _convertYuv420ToNv21(image);
+      if (nv21Bytes == null || nv21Bytes.isEmpty) {
+        _logInputImageIssue(
+          'YUV_420_888 conversion to NV21 failed. ${_cameraImageDebugInfo(image)}',
+        );
+        return null;
+      }
+      return InputImage.fromBytes(
+        bytes: nv21Bytes,
+        metadata: InputImageMetadata(
+          size: Size(image.width.toDouble(), image.height.toDouble()),
+          rotation: rotation,
+          format: InputImageFormat.nv21,
+          bytesPerRow: image.width,
+        ),
+      );
+    }
+
+    _logInputImageIssue(
+        'Android image format unsupported. ${_cameraImageDebugInfo(image)}');
+    return null;
+  }
+
+  InputImageRotation? _resolvedInputImageRotation() {
+    final controller = _cameraController;
+    if (controller == null) {
+      return null;
+    }
+    final sensorOrientation = controller.description.sensorOrientation;
+    if (Platform.isIOS) {
+      return InputImageRotationValue.fromRawValue(sensorOrientation);
+    }
+    if (!Platform.isAndroid) {
+      return InputImageRotationValue.fromRawValue(sensorOrientation);
+    }
+
+    var rotationCompensation =
+        _orientations[controller.value.deviceOrientation];
+    if (rotationCompensation == null) {
+      return null;
+    }
+    if (controller.description.lensDirection == CameraLensDirection.front) {
+      rotationCompensation = (sensorOrientation + rotationCompensation) % 360;
+    } else {
+      rotationCompensation =
+          (sensorOrientation - rotationCompensation + 360) % 360;
+    }
+    return InputImageRotationValue.fromRawValue(rotationCompensation);
+  }
+
+  int? _resolvedRotationDegrees() {
+    return _resolvedInputImageRotation()?.rawValue;
+  }
+
+  Uint8List? _convertYuv420ToNv21(CameraImage image) {
+    if (image.planes.length < 3) {
+      return null;
+    }
+    final width = image.width;
+    final height = image.height;
+    final yPlane = image.planes[0];
+    final uPlane = image.planes[1];
+    final vPlane = image.planes[2];
+    final yPixelStride = yPlane.bytesPerPixel ?? 1;
+    final uPixelStride = uPlane.bytesPerPixel ?? 1;
+    final vPixelStride = vPlane.bytesPerPixel ?? 1;
+    final uvWidth = width ~/ 2;
+    final uvHeight = height ~/ 2;
+    final output = Uint8List(width * height + 2 * uvWidth * uvHeight);
+
+    var offset = 0;
+    for (var row = 0; row < height; row++) {
+      final rowOffset = row * yPlane.bytesPerRow;
+      for (var col = 0; col < width; col++) {
+        final index = rowOffset + col * yPixelStride;
+        if (index >= yPlane.bytes.length) {
+          return null;
+        }
+        output[offset++] = yPlane.bytes[index];
+      }
+    }
+
+    for (var row = 0; row < uvHeight; row++) {
+      final uRowOffset = row * uPlane.bytesPerRow;
+      final vRowOffset = row * vPlane.bytesPerRow;
+      for (var col = 0; col < uvWidth; col++) {
+        final vIndex = vRowOffset + col * vPixelStride;
+        final uIndex = uRowOffset + col * uPixelStride;
+        if (vIndex >= vPlane.bytes.length || uIndex >= uPlane.bytes.length) {
+          return null;
+        }
+        output[offset++] = vPlane.bytes[vIndex];
+        output[offset++] = uPlane.bytes[uIndex];
+      }
+    }
+    return output;
+  }
+
+  String _cameraImageDebugInfo(CameraImage image) {
+    final buffer = StringBuffer()
+      ..write(
+        'formatGroup=${image.format.group} rawFormat=${image.format.raw} '
+        'size=${image.width}x${image.height} planes=${image.planes.length}',
+      );
+    for (var i = 0; i < image.planes.length; i++) {
+      final plane = image.planes[i];
+      buffer.write(
+        ' p$i(bytes=${plane.bytes.length}, rowStride=${plane.bytesPerRow}, '
+        'pixelStride=${plane.bytesPerPixel})',
+      );
+    }
+    return buffer.toString();
+  }
+
+  Future<void> _recoverFromInputImageConverterError({
+    required String reason,
+  }) async {
+    if (_isRecoveringImageStream) {
+      return;
+    }
+    final controller = _cameraController;
+    if (controller == null) {
+      return;
+    }
+
+    _isRecoveringImageStream = true;
+    try {
+      if (controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+      AppLogger.log(
+        'SCANNER',
+        'Image stream paused after converter error: $reason',
+      );
+      await Future<void>.delayed(_streamRecoveryDelay);
+      if (!mounted ||
+          _cameraController != controller ||
+          _isFaceDetectorClosed) {
+        return;
+      }
+      await controller.startImageStream(_processCameraFrame);
+      AppLogger.log('SCANNER', 'Image stream resumed after converter recovery');
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'SCANNER',
+        'Failed to recover camera stream after converter error',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } finally {
+      _isRecoveringImageStream = false;
+    }
   }
 
   Future<List<Face>> _detectFacesWithWarmup(InputImage image) async {
+    if (_isFaceDetectorClosed) {
+      _logFaceDetectorClosedSkip();
+      return const <Face>[];
+    }
     if (_isFaceDetectorWarmedUp) {
       return _faceDetector.processImage(image);
     }
@@ -378,6 +621,8 @@ class _AuthPageState extends State<AuthPage>
       'Heartbeat: image=${image.width}x${image.height} '
           'inputImage=$hasInputImage rawFaces=$facesText '
           'imageRotation=$rotationDegrees firstFace=$firstFaceText '
+          'format=${image.format.group}/${image.format.raw} '
+          'planes=${image.planes.length} '
           'cameraError=${cameraError ?? 'none'}',
     );
   }
@@ -402,6 +647,16 @@ class _AuthPageState extends State<AuthPage>
     AppLogger.log('SCANNER', 'InputImage unavailable: $reason');
   }
 
+  void _logFaceDetectorClosedSkip() {
+    final now = DateTime.now();
+    if (_lastDetectorClosedLogAt != null &&
+        now.difference(_lastDetectorClosedLogAt!) < _scannerHeartbeatInterval) {
+      return;
+    }
+    _lastDetectorClosedLogAt = now;
+    AppLogger.log('SCANNER', 'FaceDetector is closed, skipping frame.');
+  }
+
   void _logCameraControllerWarnings() {
     final controller = _cameraController;
     if (controller == null || !controller.value.hasError) {
@@ -416,28 +671,16 @@ class _AuthPageState extends State<AuthPage>
     AppLogger.error('SCANNER', 'Camera controller warning: $description');
   }
 
-  Uint8List _concatenatePlanes(List<Plane> planes) {
-    final totalLength = planes.fold<int>(
-      0,
-      (sum, plane) => sum + plane.bytes.length,
-    );
-    final allBytes = Uint8List(totalLength);
-    var offset = 0;
-    for (final plane in planes) {
-      allBytes.setRange(offset, offset + plane.bytes.length, plane.bytes);
-      offset += plane.bytes.length;
-    }
-    return allBytes;
-  }
-
   BiometricScanRequest<CameraImage> _scanRequest(
     CameraImage image, {
     FaceBounds? faceBounds,
   }) {
+    final rotationDegrees = _resolvedRotationDegrees() ??
+        _cameraController!.description.sensorOrientation;
     return BiometricScanRequest<CameraImage>(
       image: image,
       faceBounds: faceBounds,
-      rotationDegrees: _cameraController!.description.sensorOrientation,
+      rotationDegrees: rotationDegrees,
       isFrontCamera: _cameraController!.description.lensDirection ==
           CameraLensDirection.front,
     );
@@ -545,6 +788,7 @@ class _AuthPageState extends State<AuthPage>
   void dispose() {
     _appSettings.removeListener(_handleAppSettingsChanged);
     _reticlePulseController.dispose();
+    _isFaceDetectorClosed = true;
     final controller = _cameraController;
     if (controller != null) {
       controller.removeListener(_logCameraControllerWarnings);
