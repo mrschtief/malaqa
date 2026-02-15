@@ -59,9 +59,25 @@ class ProfileCubit extends Cubit<ProfileState> {
     try {
       final identity = await _identityRepository.getIdentity();
       if (identity == null) {
+        AppLogger.log(
+          'PROFILE',
+          'No local identity found. Falling back to guest profile.',
+        );
+        final guestIdentity = await Identity.create(name: 'Malaqa Pionier');
+        final proofs = await _chainRepository.getAllProofs();
+        final stats = _statisticsService.buildStats(proofs, me: guestIdentity);
+        final badgeProgress = _badgeManager.evaluate(proofs, me: guestIdentity);
+        final unlockedBadges = badgeProgress
+            .where((badge) => badge.unlocked)
+            .map((badge) => badge.badge)
+            .toList(growable: false);
+
         emit(
-          const ProfileError(
-            message: 'No local identity found. Please create one first.',
+          ProfileLoaded(
+            identity: guestIdentity,
+            stats: stats,
+            unlockedBadges: unlockedBadges,
+            badgeProgress: badgeProgress,
           ),
         );
         return;

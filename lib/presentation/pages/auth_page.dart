@@ -12,7 +12,6 @@ import '../../core/di/service_locator.dart';
 import '../../core/services/app_settings_service.dart';
 import '../../core/utils/app_logger.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
-import '../../domain/repositories/chain_repository.dart';
 import '../blocs/auth/auth_cubit.dart';
 import '../blocs/meeting/meeting_cubit.dart';
 import '../blocs/proximity/proximity_cubit.dart';
@@ -212,6 +211,10 @@ class _AuthPageState extends State<AuthPage>
   }
 
   Future<void> _processCameraFrame(CameraImage image) async {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isStreamingImages) {
+      return;
+    }
     if (_isProcessingFrame ||
         _isRecoveringImageStream ||
         _isDisposing ||
@@ -589,18 +592,56 @@ class _AuthPageState extends State<AuthPage>
         normalized.contains('dlopen failed');
   }
 
-  bool _isDatabaseError(String errorText) {
-    final normalized = errorText.toLowerCase();
-    return normalized.contains('isar') ||
-        normalized.contains('database') ||
-        normalized.contains('db');
-  }
-
-  Future<void> _ensureDatabaseReady() async {
-    if (!getIt.isRegistered<ChainRepository>()) {
+  Future<void> _shutdownCameraForNavigation() async {
+    final controller = _cameraController;
+    if (controller == null) {
       return;
     }
-    await getIt<ChainRepository>().getLatestProof();
+
+    _cameraController = null;
+    _isCameraReady = false;
+    _isProcessingFrame = false;
+    _isRecoveringImageStream = false;
+
+    await _stopAndDisposeCameraController(controller);
+  }
+
+  Future<void> _stopAndDisposeCameraController(
+      CameraController controller) async {
+    try {
+      if (controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'SCANNER',
+        'Failed to stop image stream during shutdown',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    try {
+      controller.removeListener(_logCameraControllerWarnings);
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'SCANNER',
+        'Failed to remove camera listener during shutdown',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    try {
+      await controller.dispose();
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'SCANNER',
+        'Failed to dispose camera controller during shutdown',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   BiometricScanRequest<CameraImage> _scanRequest(
@@ -710,10 +751,35 @@ class _AuthPageState extends State<AuthPage>
         return;
       }
 
-      await _ensureDatabaseReady();
-      await context.read<AuthCubit>().createIdentityFromVector(
-            ownerVector: ownerVector,
+      final authCubit = context.read<AuthCubit>();
+      unawaited(
+        authCubit
+            .createIdentityFromVector(
+          ownerVector: ownerVector,
+        )
+            .catchError((Object error, StackTrace stackTrace) {
+          AppLogger.error(
+            'AUTH',
+            'Fire-and-forget identity persistence failed',
+            error: error,
+            stackTrace: stackTrace,
           );
+        }),
+      );
+
+      await _shutdownCameraForNavigation();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _cameraStatus = 'Finalizing login...';
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (!mounted) {
+        return;
+      }
+      await Navigator.of(context).pushReplacement(MapPage.route());
+      return;
     } catch (error, stackTrace) {
       AppLogger.error(
         'SCANNER',
@@ -725,15 +791,6 @@ class _AuthPageState extends State<AuthPage>
         return;
       }
       final errorText = error.toString();
-      if (_isDatabaseError(errorText)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Biometrie-Speicherfehler - Login wird simuliert'),
-          ),
-        );
-        Navigator.of(context).push(MapPage.route());
-        return;
-      }
       final message = _isBiometricModuleLoadingError(errorText)
           ? 'Biometrie-Modul wird geladen... bitte warten oder App neu starten.'
           : 'Gesicht im Fokus - Halten Sie kurz still...';
@@ -779,15 +836,12 @@ class _AuthPageState extends State<AuthPage>
   void dispose() {
     _isDisposing = true;
     final controller = _cameraController;
-    if (controller != null && controller.value.isStreamingImages) {
-      unawaited(controller.stopImageStream());
-    }
+    _cameraController = null;
     _appSettings.removeListener(_handleAppSettingsChanged);
     _reticlePulseController.dispose();
     _isFaceDetectorClosed = true;
     if (controller != null) {
-      controller.removeListener(_logCameraControllerWarnings);
-      controller.dispose();
+      unawaited(_stopAndDisposeCameraController(controller));
     }
     _faceDetector.close();
     super.dispose();
@@ -1105,7 +1159,7 @@ class _AuthenticatedControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final name = state is AuthAuthenticated
         ? (state as AuthAuthenticated).identity.name
-        : 'User';
+        : 'Malaqa Pionier';
     final meetingReady =
         meetingState is MeetingReady ? meetingState as MeetingReady : null;
     final isReady = meetingReady?.isLivenessVerified ?? false;
