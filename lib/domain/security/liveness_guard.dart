@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../../core/utils/app_logger.dart';
 import '../interfaces/biometric_scanner.dart';
 
 enum LivenessChallenge {
@@ -22,13 +23,13 @@ class LivenessEvaluation {
 class LivenessGuard {
   LivenessGuard({
     Random? random,
-    this.smileThreshold = 0.8,
-    this.eyeClosedThreshold = 0.1,
+    this.smileThreshold = 0.4,
+    this.blinkThreshold = 0.3,
   }) : _random = random ?? Random();
 
   final Random _random;
   final double smileThreshold;
-  final double eyeClosedThreshold;
+  final double blinkThreshold;
 
   LivenessChallenge? _activeChallenge;
 
@@ -42,11 +43,27 @@ class LivenessGuard {
 
   LivenessEvaluation evaluate(FaceBounds face) {
     final challenge = currentChallenge;
+    final smileProb = face.smilingProbability ?? 0;
+    final leftEyeOpenProb = face.leftEyeOpenProbability;
+    final rightEyeOpenProb = face.rightEyeOpenProbability;
+
+    AppLogger.log(
+      'LIVENESS',
+      'Current Smile Prob: $smileProb (threshold=$smileThreshold)',
+    );
+    AppLogger.log(
+      'LIVENESS',
+      'Current Eye Open Probs: left=$leftEyeOpenProb right=$rightEyeOpenProb '
+          '(blinkThreshold=$blinkThreshold)',
+    );
     final passed = switch (challenge) {
-      LivenessChallenge.smile =>
-        (face.smilingProbability ?? 0) >= smileThreshold,
+      LivenessChallenge.smile => smileProb >= smileThreshold,
       LivenessChallenge.blink => _isBlink(face),
     };
+    AppLogger.log(
+      'LIVENESS',
+      'Challenge=$challenge result=${passed ? 'PASSED' : 'FAILED'}',
+    );
 
     return LivenessEvaluation(
       challenge: challenge,
@@ -64,9 +81,13 @@ class LivenessGuard {
     final left = face.leftEyeOpenProbability;
     final right = face.rightEyeOpenProbability;
     if (left == null || right == null) {
+      AppLogger.log(
+        'LIVENESS',
+        'Blink evaluation skipped: missing eye probabilities',
+      );
       return false;
     }
-    return left <= eyeClosedThreshold && right <= eyeClosedThreshold;
+    return left <= blinkThreshold && right <= blinkThreshold;
   }
 
   String promptFor(LivenessChallenge challenge) {
