@@ -62,6 +62,7 @@ class _AuthPageState extends State<AuthPage>
   bool _isFaceDetectorWarmedUp = false;
   bool _isFaceDetectorClosed = false;
   bool _isRecoveringImageStream = false;
+  bool _isDisposing = false;
   String? _lastCameraErrorDescription;
 
   @override
@@ -219,6 +220,7 @@ class _AuthPageState extends State<AuthPage>
   Future<void> _processCameraFrame(CameraImage image) async {
     if (_isProcessingFrame ||
         _isRecoveringImageStream ||
+        _isDisposing ||
         !mounted ||
         _isFaceDetectorClosed) {
       if (_isFaceDetectorClosed) {
@@ -544,6 +546,7 @@ class _AuthPageState extends State<AuthPage>
       );
       await Future<void>.delayed(_streamRecoveryDelay);
       if (!mounted ||
+          _isDisposing ||
           _cameraController != controller ||
           _isFaceDetectorClosed) {
         return;
@@ -720,11 +723,10 @@ class _AuthPageState extends State<AuthPage>
   }
 
   Future<void> _createIdentityFromCurrentFace() async {
-    if (_isCreatingIdentity) {
+    if (_isCreatingIdentity || _isDisposing) {
       return;
     }
-    final frame = _latestFrame;
-    if (frame == null || _latestFaceBoxes.isEmpty) {
+    if (_latestFrame == null || _latestFaceBoxes.isEmpty) {
       if (!mounted) {
         return;
       }
@@ -739,12 +741,30 @@ class _AuthPageState extends State<AuthPage>
     });
 
     try {
+      if (_latestFaceBoxes.length == 1) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      if (!mounted || _isDisposing) {
+        return;
+      }
+
+      final frame = _latestFrame;
+      final faceBoxes = _latestFaceBoxes;
+      if (frame == null || faceBoxes.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gesicht im Fokus - Halten Sie kurz still...'),
+          ),
+        );
+        return;
+      }
+
       final scanner =
           getIt<BiometricScanner<BiometricScanRequest<CameraImage>>>();
       final ownerVector = await scanner.captureFace(
         _scanRequest(
           frame,
-          faceBounds: _faceBoundsFromRect(_latestFaceBoxes.first),
+          faceBounds: _faceBoundsFromRect(faceBoxes.first),
         ),
       );
       if (ownerVector == null) {
@@ -815,15 +835,16 @@ class _AuthPageState extends State<AuthPage>
 
   @override
   void dispose() {
+    _isDisposing = true;
+    final controller = _cameraController;
+    if (controller != null && controller.value.isStreamingImages) {
+      unawaited(controller.stopImageStream());
+    }
     _appSettings.removeListener(_handleAppSettingsChanged);
     _reticlePulseController.dispose();
     _isFaceDetectorClosed = true;
-    final controller = _cameraController;
     if (controller != null) {
       controller.removeListener(_logCameraControllerWarnings);
-      if (controller.value.isStreamingImages) {
-        controller.stopImageStream();
-      }
       controller.dispose();
     }
     _faceDetector.close();
@@ -1272,48 +1293,61 @@ Rect _mapImageRectToCanvas({
   final isQuarterTurn = normalizedRotation == 90 || normalizedRotation == 270;
   final rotatedImageWidth = isQuarterTurn ? imageSize.height : imageSize.width;
   final rotatedImageHeight = isQuarterTurn ? imageSize.width : imageSize.height;
-
-  final rotatedRect = switch (normalizedRotation) {
-    90 => Rect.fromLTWH(
-        imageSize.height - imageRect.bottom,
-        imageRect.left,
-        imageRect.height,
-        imageRect.width,
-      ),
-    180 => Rect.fromLTWH(
-        imageSize.width - imageRect.right,
-        imageSize.height - imageRect.bottom,
-        imageRect.width,
-        imageRect.height,
-      ),
-    270 => Rect.fromLTWH(
-        imageRect.top,
-        imageSize.width - imageRect.right,
-        imageRect.height,
-        imageRect.width,
-      ),
-    _ => imageRect,
-  };
-
   final scaleX = canvasSize.width / rotatedImageWidth;
   final scaleY = canvasSize.height / rotatedImageHeight;
-  var mappedRect = Rect.fromLTWH(
-    rotatedRect.left * scaleX,
-    rotatedRect.top * scaleY,
-    rotatedRect.width * scaleX,
-    rotatedRect.height * scaleY,
-  );
 
-  if (isFrontCamera) {
-    mappedRect = Rect.fromLTRB(
-      canvasSize.width - mappedRect.right,
-      mappedRect.top,
-      canvasSize.width - mappedRect.left,
-      mappedRect.bottom,
-    );
+  Offset rotatePoint(Offset point) {
+    return switch (normalizedRotation) {
+      90 => Offset(imageSize.height - point.dy, point.dx),
+      180 => Offset(imageSize.width - point.dx, imageSize.height - point.dy),
+      270 => Offset(point.dy, imageSize.width - point.dx),
+      _ => point,
+    };
   }
 
-  return mappedRect;
+  Offset toCanvasPoint(Offset imagePoint) {
+    final rotatedPoint = rotatePoint(imagePoint);
+    var canvasX = rotatedPoint.dx * scaleX;
+    final canvasY = rotatedPoint.dy * scaleY;
+
+    if (isFrontCamera) {
+      if (normalizedRotation == 270) {
+        canvasX = canvasSize.width - (rotatedPoint.dx * scaleX);
+      } else {
+        canvasX = canvasSize.width - canvasX;
+      }
+    }
+
+    return Offset(canvasX, canvasY);
+  }
+
+  final corners = <Offset>[
+    toCanvasPoint(imageRect.topLeft),
+    toCanvasPoint(imageRect.topRight),
+    toCanvasPoint(imageRect.bottomLeft),
+    toCanvasPoint(imageRect.bottomRight),
+  ];
+
+  var minX = corners.first.dx;
+  var maxX = corners.first.dx;
+  var minY = corners.first.dy;
+  var maxY = corners.first.dy;
+  for (final point in corners.skip(1)) {
+    if (point.dx < minX) {
+      minX = point.dx;
+    }
+    if (point.dx > maxX) {
+      maxX = point.dx;
+    }
+    if (point.dy < minY) {
+      minY = point.dy;
+    }
+    if (point.dy > maxY) {
+      maxY = point.dy;
+    }
+  }
+
+  return Rect.fromLTRB(minX, minY, maxX, maxY);
 }
 
 class _DebugFaceOverlayPainter extends CustomPainter {
