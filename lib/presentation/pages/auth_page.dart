@@ -29,6 +29,8 @@ class AuthPage extends StatefulWidget {
 
 class _AuthPageState extends State<AuthPage>
     with SingleTickerProviderStateMixin {
+  static const Duration _scannerHeartbeatInterval = Duration(seconds: 1);
+
   CameraController? _cameraController;
   late final FaceDetector _faceDetector;
   late final AnimationController _reticlePulseController;
@@ -42,6 +44,12 @@ class _AuthPageState extends State<AuthPage>
   List<Rect> _latestFaceBoxes = const <Rect>[];
   Size? _latestImageSize;
   String _cameraStatus = 'Starting camera...';
+  DateTime? _lastScannerHeartbeatAt;
+  DateTime? _lastInputImageIssueAt;
+  DateTime? _lastNoFaceLogAt;
+  DateTime? _lastWarmupFailureAt;
+  bool _isFaceDetectorWarmedUp = false;
+  String? _lastCameraErrorDescription;
 
   @override
   void initState() {
@@ -58,59 +66,137 @@ class _AuthPageState extends State<AuthPage>
         enableClassification: true,
       ),
     );
+    AppLogger.log(
+      'SCANNER',
+      'FaceDetector created (mode=fast, classification=true).',
+    );
+    AppLogger.log(
+      'SCANNER',
+      'Deep debug heartbeat enabled (max 1 log/s).',
+    );
     _initializeCamera();
     unawaited(context.read<AuthCubit>().checkIdentity());
   }
 
   Future<void> _initializeCamera() async {
-    final permission = await Permission.camera.request();
-    if (!permission.isGranted) {
+    CameraController? initializedController;
+    try {
+      final permission = await Permission.camera.request();
+      AppLogger.log('SCANNER', 'Camera permission status: $permission');
+      if (!permission.isGranted) {
+        AppLogger.error('SCANNER', 'Camera permission denied.');
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _cameraStatus = 'Camera permission denied';
+        });
+        return;
+      }
+
+      final cameras = await availableCameras();
+      AppLogger.log('SCANNER', 'availableCameras() -> ${cameras.length}');
+      if (cameras.isEmpty) {
+        AppLogger.error('SCANNER', 'No camera available on device.');
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _cameraStatus = 'No camera available';
+        });
+        return;
+      }
+
+      final selectedCamera = cameras.firstWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+      AppLogger.log(
+        'SCANNER',
+        'Selected camera: lens=${selectedCamera.lensDirection} '
+            'sensorOrientation=${selectedCamera.sensorOrientation}',
+      );
+
+      initializedController = CameraController(
+        selectedCamera,
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: Platform.isIOS
+            ? ImageFormatGroup.bgra8888
+            : ImageFormatGroup.yuv420,
+      );
+      _cameraController = initializedController;
+      initializedController.addListener(_logCameraControllerWarnings);
+
+      await initializedController.initialize();
+      AppLogger.log(
+        'SCANNER',
+        'Camera initialized. preview=${initializedController.value.previewSize}',
+      );
+      await initializedController.startImageStream(_processCameraFrame);
+      AppLogger.log(
+        'SCANNER',
+        'Image stream started. Watch native logcat for CameraX '
+            'HardwareBuffer/Surface warnings.',
+      );
+
       if (!mounted) {
+        initializedController.removeListener(_logCameraControllerWarnings);
+        await initializedController.dispose();
+        _cameraController = null;
+        return;
+      }
+
+      setState(() {
+        _isCameraReady = true;
+        _cameraStatus = 'Looking for you...';
+      });
+    } on CameraException catch (error, stackTrace) {
+      if (initializedController != null) {
+        initializedController.removeListener(_logCameraControllerWarnings);
+        if (initializedController.value.isStreamingImages) {
+          await initializedController.stopImageStream();
+        }
+        await initializedController.dispose();
+      }
+      AppLogger.error(
+        'SCANNER',
+        'Camera initialization failed '
+            '(code=${error.code}, description=${error.description})',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!mounted) {
+        _cameraController = null;
         return;
       }
       setState(() {
-        _cameraStatus = 'Camera permission denied';
+        _cameraStatus = 'Camera init failed: ${error.code}';
+        _cameraController = null;
       });
-      return;
-    }
-
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) {
+    } catch (error, stackTrace) {
+      if (initializedController != null) {
+        initializedController.removeListener(_logCameraControllerWarnings);
+        if (initializedController.value.isStreamingImages) {
+          await initializedController.stopImageStream();
+        }
+        await initializedController.dispose();
+      }
+      AppLogger.error(
+        'SCANNER',
+        'Unexpected camera initialization failure',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (!mounted) {
+        _cameraController = null;
         return;
       }
       setState(() {
-        _cameraStatus = 'No camera available';
+        _cameraStatus = 'Camera init failed';
+        _cameraController = null;
       });
-      return;
     }
-
-    final selectedCamera = cameras.firstWhere(
-      (camera) => camera.lensDirection == CameraLensDirection.front,
-      orElse: () => cameras.first,
-    );
-
-    final controller = CameraController(
-      selectedCamera,
-      ResolutionPreset.medium,
-      enableAudio: false,
-      imageFormatGroup:
-          Platform.isIOS ? ImageFormatGroup.bgra8888 : ImageFormatGroup.yuv420,
-    );
-
-    await controller.initialize();
-    await controller.startImageStream(_processCameraFrame);
-
-    if (!mounted) {
-      await controller.dispose();
-      return;
-    }
-
-    setState(() {
-      _cameraController = controller;
-      _isCameraReady = true;
-      _cameraStatus = 'Looking for you...';
-    });
   }
 
   Future<void> _processCameraFrame(CameraImage image) async {
@@ -123,12 +209,30 @@ class _AuthPageState extends State<AuthPage>
     _isProcessingFrame = true;
 
     try {
+      final rotationDegrees = _cameraController?.description.sensorOrientation;
       final inputImage = _toInputImage(image);
       if (inputImage == null) {
+        _logScannerHeartbeat(
+          image: image,
+          hasInputImage: false,
+          rotationDegrees: rotationDegrees,
+          rawFaceCount: null,
+        );
         return;
       }
 
-      final detectedFaces = await _faceDetector.processImage(inputImage);
+      final detectedFaces = await _detectFacesWithWarmup(inputImage);
+      _logScannerHeartbeat(
+        image: image,
+        hasInputImage: true,
+        rotationDegrees: rotationDegrees,
+        rawFaceCount: detectedFaces.length,
+        firstFace: detectedFaces.isEmpty ? null : detectedFaces.first,
+      );
+      if (detectedFaces.isEmpty) {
+        _logNoFaceDetected();
+      }
+
       final sortedFaces = [...detectedFaces]..sort(
           (a, b) => (b.boundingBox.width * b.boundingBox.height)
               .compareTo(a.boundingBox.width * a.boundingBox.height),
@@ -158,8 +262,13 @@ class _AuthPageState extends State<AuthPage>
             sortedFaces.map(_faceBoundsFromFace).toList(growable: false);
         unawaited(context.read<MeetingCubit>().processFrame(request, bounds));
       }
-    } catch (_) {
-      // Keep camera loop resilient and silent in UI for now.
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'SCANNER',
+        'Frame processing failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     } finally {
       _isProcessingFrame = false;
     }
@@ -168,6 +277,7 @@ class _AuthPageState extends State<AuthPage>
   InputImage? _toInputImage(CameraImage image) {
     final controller = _cameraController;
     if (controller == null) {
+      _logInputImageIssue('cameraController is null');
       return null;
     }
 
@@ -175,20 +285,26 @@ class _AuthPageState extends State<AuthPage>
       controller.description.sensorOrientation,
     );
     if (rotation == null) {
+      _logInputImageIssue(
+        'Unsupported rotation: ${controller.description.sensorOrientation}',
+      );
       return null;
     }
 
     final rawFormat = image.format.raw;
     if (rawFormat is! int) {
+      _logInputImageIssue('Image format raw value is not int: $rawFormat');
       return null;
     }
     final format = InputImageFormatValue.fromRawValue(rawFormat);
     if (format == null) {
+      _logInputImageIssue('Unsupported input image format raw=$rawFormat');
       return null;
     }
 
     final bytes = _concatenatePlanes(image.planes);
     if (bytes.isEmpty) {
+      _logInputImageIssue('Camera image bytes are empty');
       return null;
     }
 
@@ -203,6 +319,101 @@ class _AuthPageState extends State<AuthPage>
       bytes: bytes,
       metadata: metadata,
     );
+  }
+
+  Future<List<Face>> _detectFacesWithWarmup(InputImage image) async {
+    if (_isFaceDetectorWarmedUp) {
+      return _faceDetector.processImage(image);
+    }
+
+    try {
+      final faces = await _faceDetector.processImage(image);
+      _isFaceDetectorWarmedUp = true;
+      AppLogger.log(
+        'SCANNER',
+        'FaceDetector warm-up successful. Initial rawFaces=${faces.length}.',
+      );
+      return faces;
+    } catch (error, stackTrace) {
+      final now = DateTime.now();
+      if (_lastWarmupFailureAt == null ||
+          now.difference(_lastWarmupFailureAt!) >= _scannerHeartbeatInterval) {
+        _lastWarmupFailureAt = now;
+        AppLogger.error(
+          'SCANNER',
+          'FaceDetector warm-up failed. '
+              'Check model download / Google Play Services.',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  void _logScannerHeartbeat({
+    required CameraImage image,
+    required bool hasInputImage,
+    required int? rotationDegrees,
+    required int? rawFaceCount,
+    Face? firstFace,
+  }) {
+    final now = DateTime.now();
+    if (_lastScannerHeartbeatAt != null &&
+        now.difference(_lastScannerHeartbeatAt!) < _scannerHeartbeatInterval) {
+      return;
+    }
+    _lastScannerHeartbeatAt = now;
+
+    final facesText = rawFaceCount == null ? 'n/a' : rawFaceCount.toString();
+    final cameraError = _cameraController?.value.errorDescription;
+    final firstFaceText = firstFace == null
+        ? 'none'
+        : 'box=${firstFace.boundingBox} '
+            'smile=${firstFace.smilingProbability} '
+            'leftEyeOpen=${firstFace.leftEyeOpenProbability} '
+            'rightEyeOpen=${firstFace.rightEyeOpenProbability}';
+    AppLogger.log(
+      'SCANNER',
+      'Heartbeat: image=${image.width}x${image.height} '
+          'inputImage=$hasInputImage rawFaces=$facesText '
+          'imageRotation=$rotationDegrees firstFace=$firstFaceText '
+          'cameraError=${cameraError ?? 'none'}',
+    );
+  }
+
+  void _logNoFaceDetected() {
+    final now = DateTime.now();
+    if (_lastNoFaceLogAt != null &&
+        now.difference(_lastNoFaceLogAt!) < _scannerHeartbeatInterval) {
+      return;
+    }
+    _lastNoFaceLogAt = now;
+    AppLogger.log('SCANNER', 'Camera active, but ML Kit returns 0 faces.');
+  }
+
+  void _logInputImageIssue(String reason) {
+    final now = DateTime.now();
+    if (_lastInputImageIssueAt != null &&
+        now.difference(_lastInputImageIssueAt!) < _scannerHeartbeatInterval) {
+      return;
+    }
+    _lastInputImageIssueAt = now;
+    AppLogger.log('SCANNER', 'InputImage unavailable: $reason');
+  }
+
+  void _logCameraControllerWarnings() {
+    final controller = _cameraController;
+    if (controller == null || !controller.value.hasError) {
+      return;
+    }
+    final description =
+        controller.value.errorDescription ?? 'unknown camera controller error';
+    if (_lastCameraErrorDescription == description) {
+      return;
+    }
+    _lastCameraErrorDescription = description;
+    AppLogger.error('SCANNER', 'Camera controller warning: $description');
   }
 
   Uint8List _concatenatePlanes(List<Plane> planes) {
@@ -336,6 +547,7 @@ class _AuthPageState extends State<AuthPage>
     _reticlePulseController.dispose();
     final controller = _cameraController;
     if (controller != null) {
+      controller.removeListener(_logCameraControllerWarnings);
       if (controller.value.isStreamingImages) {
         controller.stopImageStream();
       }
@@ -456,6 +668,17 @@ class _AuthPageState extends State<AuthPage>
                                 );
                               },
                             ),
+                            if (_latestFaceBoxes.isNotEmpty &&
+                                _latestImageSize != null)
+                              CustomPaint(
+                                painter: _DebugFaceOverlayPainter(
+                                  faceBoxes: _latestFaceBoxes,
+                                  imageSize: _latestImageSize!,
+                                  isFrontCamera: _cameraController!
+                                          .description.lensDirection ==
+                                      CameraLensDirection.front,
+                                ),
+                              ),
                             if (guestBounds != null && _latestImageSize != null)
                               CustomPaint(
                                 painter: _GuestReticlePainter(
@@ -754,6 +977,56 @@ class _AuthenticatedControls extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class _DebugFaceOverlayPainter extends CustomPainter {
+  _DebugFaceOverlayPainter({
+    required this.faceBoxes,
+    required this.imageSize,
+    required this.isFrontCamera,
+  });
+
+  final List<Rect> faceBoxes;
+  final Size imageSize;
+  final bool isFrontCamera;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..color = const Color(0xFFFF3B30).withValues(alpha: 0.9);
+
+    for (final face in faceBoxes) {
+      var rect = Rect.fromLTWH(
+        face.left * (size.width / imageSize.width),
+        face.top * (size.height / imageSize.height),
+        face.width * (size.width / imageSize.width),
+        face.height * (size.height / imageSize.height),
+      );
+
+      if (isFrontCamera) {
+        rect = Rect.fromLTRB(
+          size.width - rect.right,
+          rect.top,
+          size.width - rect.left,
+          rect.bottom,
+        );
+      }
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(rect.inflate(6), const Radius.circular(12)),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DebugFaceOverlayPainter oldDelegate) {
+    return oldDelegate.faceBoxes != faceBoxes ||
+        oldDelegate.imageSize != imageSize ||
+        oldDelegate.isFrontCamera != isFrontCamera;
   }
 }
 
