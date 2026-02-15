@@ -2,16 +2,10 @@
 
 Dieses Dokument steuert, wie wir im Projekt `malaqa` arbeiten.
 
-## STOP-&-GO USER-TAKTIK (HÖCHSTE PRIORITÄT)
+## FEEDBACK-DRIVEN USER-TAKTIK (HOECHSTE PRIORITAET)
 
-1. Nach jedem einzelnen Sub-Task: STOPP.
-2. Kurz berichten:
-   - Was wurde umgesetzt?
-   - Welche Tests/Laufchecks wurden ausgefuehrt?
-   - Welche Risiken/Offenen Fragen bleiben?
-3. Explizit User-Go abwarten, bevor der naechste Sub-Task startet.
-4. Bei zu grossen Multi-Milestone-Prompts aktiv bremsen:
-   - "Stopp, Gemini. Lass uns erst X verifizieren, bevor wir Y bauen."
+Die verbindlichen Detailregeln stehen gesammelt in Abschnitt 9
+(`User-Taktik: Feedback statt Pflicht-Stop`).
 
 Masterplan:
 
@@ -26,6 +20,8 @@ Masterplan:
 ## 2. Arbeitsregeln fuer Implementierungen
 
 - Bevorzugt TDD (erst Test, dann Code).
+- Jeder Coding-Schritt braucht nachvollziehbares Feedback aus Testresultaten und Logs.
+- Implementiertes Verhalten immer unter mehreren Bedingungen pruefen (mindestens Happy Path plus Edge/Error-Fall).
 - Keine stillen Architekturwechsel ohne Doku-Update in `MALAQA.md`.
 - Keine Persistenz von Rohbildern oder unsaltierten Face-Vektoren.
 - Kryptografische Nutzdaten muessen kanonisch serialisiert und testbar sein.
@@ -49,9 +45,10 @@ Masterplan:
 1. Task-Scope in 1-3 Saetzen festhalten.
 2. Fehlenden Test erstellen.
 3. Minimal implementieren bis Test gruen.
-4. Edge-Cases absichern.
-5. Doku in `MALAQA.md` aktualisieren.
-6. Commit mit engem Scope.
+4. Laufchecks/Testsuite ausfuehren und Logs auf Sollverhalten pruefen.
+5. Unter mindestens einer weiteren Bedingung (Edge/Error) ausfuehren und Logs vergleichen.
+6. Doku in `MALAQA.md` aktualisieren.
+7. Commit mit engem Scope.
 
 ## 5. Commit-Konvention (empfohlen)
 
@@ -84,19 +81,19 @@ Ein Task ist fertig, wenn:
 2. Einen Milestone waehlen.
 3. Mit einem kleinen, testgetriebenen Teil starten.
 
-## 9. User-Taktik: Stop-&-Go (verbindlich)
+## 9. User-Taktik: Feedback statt Pflicht-Stop (verbindlich)
 
 Ab sofort gilt fuer alle Milestones und Sub-Tasks:
 
-1. Nach jedem einzelnen Sub-Task: STOPP.
-2. Kurz berichten:
-   - Was wurde umgesetzt?
-   - Welche Tests/Laufchecks wurden ausgefuehrt?
-   - Welches Risiko/Offene Fragen bleiben?
-3. Explizit auf User-Go warten, bevor der naechste Sub-Task startet.
+1. Kein generelles Anhalten nach jedem Sub-Task.
+2. Nach jedem Coding-Schritt immer:
+   - Tests/Laufchecks ausfuehren
+   - Logs auf erwartetes Verhalten pruefen
+   - Feedback aus mehreren Bedingungen dokumentieren
+3. Status-Update an den User nach einem sinnvollen Inkrement, bei Risiken oder bei Entscheidungen.
+4. Bei grossen Prompts in verifizierbare Teilstuecke teilen und fuer jedes Teilstueck belastbares Feedback liefern.
 
 Zusatzregel:
 
-- Wenn ein Prompt mehrere grosse Milestones in einem Schritt fordert, aktiv
-  bremsen und um Verifikation des aktuellen Teils bitten:
-  "Stopp, Gemini. Lass uns erst X verifizieren, bevor wir Y bauen."
+- Aktiv bremsen nur bei unklarem Scope, Risiko oder Richtungsentscheidung:
+  "Stopp, lass uns erst X mit Tests und Logs verifizieren, bevor wir Y bauen."
