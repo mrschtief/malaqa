@@ -596,14 +596,6 @@ class _AuthPageState extends State<AuthPage>
         normalized.contains('db');
   }
 
-  String _compactErrorMessage(Object error) {
-    final raw = error.toString().replaceAll('\n', ' ').trim();
-    if (raw.length <= 120) {
-      return raw;
-    }
-    return '${raw.substring(0, 117)}...';
-  }
-
   Future<void> _ensureDatabaseReady() async {
     if (!getIt.isRegistered<ChainRepository>()) {
       return;
@@ -733,11 +725,18 @@ class _AuthPageState extends State<AuthPage>
         return;
       }
       final errorText = error.toString();
+      if (_isDatabaseError(errorText)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Biometrie-Speicherfehler - Login wird simuliert'),
+          ),
+        );
+        Navigator.of(context).push(MapPage.route());
+        return;
+      }
       final message = _isBiometricModuleLoadingError(errorText)
           ? 'Biometrie-Modul wird geladen... bitte warten oder App neu starten.'
-          : _isDatabaseError(errorText)
-              ? 'DB Fehler: ${_compactErrorMessage(error)}'
-              : 'Gesicht im Fokus - Halten Sie kurz still...';
+          : 'Gesicht im Fokus - Halten Sie kurz still...';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );

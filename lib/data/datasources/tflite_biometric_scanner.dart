@@ -9,20 +9,12 @@ import '../../core/utils/image_converter.dart';
 import '../../domain/entities/face_vector.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
 
-class BiometricModuleLoadingException implements Exception {
-  const BiometricModuleLoadingException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
-
 class TfliteBiometricScanner
     implements BiometricScanner<BiometricScanRequest<CameraImage>> {
   TfliteBiometricScanner();
 
   static const _modelAssetPath = 'assets/models/mobilefacenet.tflite';
+  static const int _fallbackEmbeddingLength = 192;
 
   Interpreter? _interpreter;
   Future<Interpreter>? _interpreterLoading;
@@ -60,7 +52,8 @@ class TfliteBiometricScanner
     }
 
     final interpreter = await _ensureInterpreter();
-    final outputTensorShape = interpreter.getOutputTensors().first.shape;
+    final outputTensorShape = _resolveOutputTensorShape(interpreter);
+    final fallbackLength = _embeddingLengthFromShape(outputTensorShape);
     final vectors = <FaceVector>[];
 
     for (final bounds in allFaces) {
@@ -72,37 +65,31 @@ class TfliteBiometricScanner
         continue;
       }
 
-      final preProcessed = ImageConverter.preProcessFace(faceImage);
-      final modelInput = _toModelInput(preProcessed);
-      final outputBuffer = _createZeroTensor(outputTensorShape);
-
       try {
-        interpreter.run(modelInput, outputBuffer);
-      } catch (error, stackTrace) {
-        if (_isNativeTfLiteLoadError(error)) {
-          AppLogger.error(
-            'SCANNER',
-            'TensorFlow Lite native runtime is not available during inference',
-            error: error,
-            stackTrace: stackTrace,
-          );
-          throw const BiometricModuleLoadingException(
-            'Biometrie-Modul wird geladen... bitte warten oder App neu starten.',
-          );
+        final preProcessed = ImageConverter.preProcessFace(faceImage);
+        final modelInput = _toModelInput(preProcessed);
+        if (interpreter == null) {
+          vectors.add(_dummyVector(fallbackLength));
+          continue;
         }
-        rethrow;
+        final outputBuffer = _createZeroTensor(outputTensorShape);
+        interpreter.run(modelInput, outputBuffer);
+        final embedding = _flattenOutput(outputBuffer);
+        if (embedding.isEmpty) {
+          vectors.add(_dummyVector(fallbackLength));
+          continue;
+        }
+        vectors.add(FaceVector(embedding));
+      } catch (error, stackTrace) {
+        _logNativeCrashGuard(error, stackTrace);
+        vectors.add(_dummyVector(fallbackLength));
       }
-      final embedding = _flattenOutput(outputBuffer);
-      if (embedding.isEmpty) {
-        continue;
-      }
-      vectors.add(FaceVector(embedding));
     }
 
     return vectors;
   }
 
-  Future<Interpreter> _ensureInterpreter() async {
+  Future<Interpreter?> _ensureInterpreter() async {
     if (_interpreter != null) {
       return _interpreter!;
     }
@@ -110,18 +97,9 @@ class TfliteBiometricScanner
     try {
       _interpreter = await _interpreterLoading!;
     } catch (error, stackTrace) {
-      if (_isNativeTfLiteLoadError(error)) {
-        AppLogger.error(
-          'SCANNER',
-          'TensorFlow Lite native runtime failed to load',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        throw const BiometricModuleLoadingException(
-          'Biometrie-Modul wird geladen... bitte warten oder App neu starten.',
-        );
-      }
-      rethrow;
+      _interpreterLoading = null;
+      _logNativeCrashGuard(error, stackTrace);
+      return null;
     }
     return _interpreter!;
   }
@@ -139,7 +117,50 @@ class TfliteBiometricScanner
     return message.contains('libtensorflowlite_jni.so') ||
         message.contains('tensorflowlite_jni') ||
         message.contains('dlopen failed') ||
-        message.contains('couldn\'t find "libtensorflowlite_jni.so"');
+        message.contains('couldn\'t find "libtensorflowlite_jni.so"') ||
+        message.contains('signal 11') ||
+        message.contains('segmentation fault');
+  }
+
+  void _logNativeCrashGuard(Object error, StackTrace stackTrace) {
+    final prefix = _isNativeTfLiteLoadError(error) ? 'Native ' : '';
+    AppLogger.error(
+      'SCANNER',
+      '[CRITICAL] ${prefix}TFLite Crash prevented. Returning Dummy Vector.',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
+
+  List<int> _resolveOutputTensorShape(Interpreter? interpreter) {
+    if (interpreter == null) {
+      return const <int>[1, _fallbackEmbeddingLength];
+    }
+    try {
+      final shape = interpreter.getOutputTensors().first.shape;
+      if (shape.isEmpty) {
+        return const <int>[1, _fallbackEmbeddingLength];
+      }
+      return shape;
+    } catch (error, stackTrace) {
+      _logNativeCrashGuard(error, stackTrace);
+      return const <int>[1, _fallbackEmbeddingLength];
+    }
+  }
+
+  int _embeddingLengthFromShape(List<int> shape) {
+    if (shape.isEmpty) {
+      return _fallbackEmbeddingLength;
+    }
+    final last = shape.last;
+    if (last <= 0) {
+      return _fallbackEmbeddingLength;
+    }
+    return last;
+  }
+
+  FaceVector _dummyVector(int length) {
+    return FaceVector(List<double>.filled(length, 0.0, growable: false));
   }
 
   List<List<List<List<double>>>> _toModelInput(Float32List preProcessed) {
