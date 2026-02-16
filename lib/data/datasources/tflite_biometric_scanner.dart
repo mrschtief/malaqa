@@ -40,6 +40,11 @@ class TfliteBiometricScanner
     List<FaceBounds> allFaces,
   ) async {
     if (allFaces.isEmpty) {
+      AppLogger.throttled(
+        'SCANNER.scanFaces.noFaces',
+        const Duration(seconds: 2),
+        () => AppLogger.debug('SCANNER', 'scanFaces(): no faces provided'),
+      );
       return const <FaceVector>[];
     }
 
@@ -48,6 +53,19 @@ class TfliteBiometricScanner
       rotationDegrees: input.rotationDegrees,
     );
     if (converted == null) {
+      AppLogger.throttled(
+        'SCANNER.scanFaces.convertedNull',
+        const Duration(seconds: 2),
+        () => AppLogger.warn(
+          'SCANNER',
+          'scanFaces(): image conversion returned null '
+              '(formatGroup=${input.image.format.group}, '
+              'raw=${input.image.format.raw}, '
+              'size=${input.image.width}x${input.image.height}, '
+              'planes=${input.image.planes.length}, '
+              'rotation=${input.rotationDegrees})',
+        ),
+      );
       return const <FaceVector>[];
     }
 
@@ -62,6 +80,19 @@ class TfliteBiometricScanner
         faceBounds: bounds,
       );
       if (faceImage == null) {
+        AppLogger.throttled(
+          'SCANNER.cropFace.null',
+          const Duration(seconds: 2),
+          () => AppLogger.warn(
+            'SCANNER',
+            'cropFace() returned null (bounds='
+                'l=${bounds.left.toStringAsFixed(1)} '
+                't=${bounds.top.toStringAsFixed(1)} '
+                'r=${bounds.right.toStringAsFixed(1)} '
+                'b=${bounds.bottom.toStringAsFixed(1)} '
+                '| img=${converted.width}x${converted.height})',
+          ),
+        );
         continue;
       }
 
@@ -105,11 +136,27 @@ class TfliteBiometricScanner
   }
 
   Future<Interpreter> _loadInterpreter() async {
+    AppLogger.info(
+        'SCANNER', 'Loading TFLite interpreter from asset=$_modelAssetPath');
     final options = InterpreterOptions()..threads = 4;
     if (Platform.isAndroid) {
       options.useNnApiForAndroid = true;
     }
-    return Interpreter.fromAsset(_modelAssetPath, options: options);
+    final interpreter = await Interpreter.fromAsset(
+      _modelAssetPath,
+      options: options,
+    );
+    try {
+      final in0 = interpreter.getInputTensors().first;
+      final out0 = interpreter.getOutputTensors().first;
+      AppLogger.info(
+        'SCANNER',
+        'TFLite interpreter ready. inputShape=${in0.shape} outputShape=${out0.shape}',
+      );
+    } catch (_) {
+      // Ignore shape introspection errors; not critical.
+    }
+    return interpreter;
   }
 
   bool _isNativeTfLiteLoadError(Object error) {

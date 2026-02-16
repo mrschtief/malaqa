@@ -57,47 +57,61 @@ class NearbyConnectionsService implements NearbyService {
     _userName = userName;
     _activeAdvertisedPayload = payload;
 
-    await _nearby.stopAdvertising();
+    try {
+      await _nearby.stopAdvertising();
 
-    final started = await _nearby.startAdvertising(
-      userName,
-      Strategy.P2P_STAR,
-      serviceId: serviceId,
-      onConnectionInitiated: (endpointId, connectionInfo) async {
-        AppLogger.log(
-          'NEARBY',
-          'Advertising: connection initiated with $endpointId',
-        );
-        await _nearby.acceptConnection(
-          endpointId,
-          onPayLoadRecieved: _onPayloadReceived,
-        );
-      },
-      onConnectionResult: (endpointId, status) async {
-        AppLogger.log(
-          'NEARBY',
-          'Advertising: connection result $status for $endpointId',
-        );
-        if (status != Status.CONNECTED || _activeAdvertisedPayload == null) {
-          return;
-        }
+      final started = await _nearby.startAdvertising(
+        userName,
+        Strategy.P2P_STAR,
+        serviceId: serviceId,
+        onConnectionInitiated: (endpointId, connectionInfo) async {
+          AppLogger.log(
+            'NEARBY',
+            'Advertising: connection initiated with $endpointId',
+          );
+          await _nearby.acceptConnection(
+            endpointId,
+            onPayLoadRecieved: _onPayloadReceived,
+          );
+        },
+        onConnectionResult: (endpointId, status) async {
+          AppLogger.log(
+            'NEARBY',
+            'Advertising: connection result $status for $endpointId',
+          );
+          if (status != Status.CONNECTED || _activeAdvertisedPayload == null) {
+            return;
+          }
 
-        final bytes = Uint8List.fromList(
-          utf8.encode(_activeAdvertisedPayload!),
-        );
-        await _nearby.sendBytesPayload(endpointId, bytes);
-        AppLogger.log(
-          'NEARBY',
-          'Advertising: payload sent to $endpointId',
-        );
-      },
-      onDisconnected: (endpointId) {
-        AppLogger.log('NEARBY', 'Advertising: disconnected from $endpointId');
-      },
-    );
+          final bytes = Uint8List.fromList(
+            utf8.encode(_activeAdvertisedPayload!),
+          );
+          await _nearby.sendBytesPayload(endpointId, bytes);
+          AppLogger.log(
+            'NEARBY',
+            'Advertising: payload sent to $endpointId',
+          );
+        },
+        onDisconnected: (endpointId) {
+          AppLogger.log('NEARBY', 'Advertising: disconnected from $endpointId');
+        },
+      );
 
-    if (!started) {
-      AppLogger.error('NEARBY', 'Failed to start advertising');
+      if (!started) {
+        AppLogger.error('NEARBY', 'Failed to start advertising');
+      }
+    } catch (error, stackTrace) {
+      AppLogger.warn(
+        'NEARBY',
+        'startAdvertising failed (permissions missing or Nearby unsupported).',
+      );
+      AppLogger.error(
+        'NEARBY',
+        'startAdvertising exception',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
     }
   }
 
@@ -107,51 +121,65 @@ class NearbyConnectionsService implements NearbyService {
   }) async {
     _userName = userName;
 
-    await _nearby.stopDiscovery();
+    try {
+      await _nearby.stopDiscovery();
 
-    final started = await _nearby.startDiscovery(
-      userName,
-      Strategy.P2P_STAR,
-      serviceId: serviceId,
-      onEndpointFound: (endpointId, endpointName, discoveredServiceId) async {
-        AppLogger.log(
-          'NEARBY',
-          'Discovery: endpoint found $endpointId ($endpointName)',
-        );
-        await _nearby.requestConnection(
-          _userName,
-          endpointId,
-          onConnectionInitiated: (requestEndpointId, connectionInfo) async {
-            AppLogger.log(
-              'NEARBY',
-              'Discovery: connection initiated with $requestEndpointId',
-            );
-            await _nearby.acceptConnection(
-              requestEndpointId,
-              onPayLoadRecieved: _onPayloadReceived,
-            );
-          },
-          onConnectionResult: (requestEndpointId, status) {
-            AppLogger.log(
-              'NEARBY',
-              'Discovery: connection result $status for $requestEndpointId',
-            );
-          },
-          onDisconnected: (requestEndpointId) {
-            AppLogger.log(
-              'NEARBY',
-              'Discovery: disconnected from $requestEndpointId',
-            );
-          },
-        );
-      },
-      onEndpointLost: (endpointId) {
-        AppLogger.log('NEARBY', 'Discovery: endpoint lost $endpointId');
-      },
-    );
+      final started = await _nearby.startDiscovery(
+        userName,
+        Strategy.P2P_STAR,
+        serviceId: serviceId,
+        onEndpointFound: (endpointId, endpointName, discoveredServiceId) async {
+          AppLogger.log(
+            'NEARBY',
+            'Discovery: endpoint found $endpointId ($endpointName)',
+          );
+          await _nearby.requestConnection(
+            _userName,
+            endpointId,
+            onConnectionInitiated: (requestEndpointId, connectionInfo) async {
+              AppLogger.log(
+                'NEARBY',
+                'Discovery: connection initiated with $requestEndpointId',
+              );
+              await _nearby.acceptConnection(
+                requestEndpointId,
+                onPayLoadRecieved: _onPayloadReceived,
+              );
+            },
+            onConnectionResult: (requestEndpointId, status) {
+              AppLogger.log(
+                'NEARBY',
+                'Discovery: connection result $status for $requestEndpointId',
+              );
+            },
+            onDisconnected: (requestEndpointId) {
+              AppLogger.log(
+                'NEARBY',
+                'Discovery: disconnected from $requestEndpointId',
+              );
+            },
+          );
+        },
+        onEndpointLost: (endpointId) {
+          AppLogger.log('NEARBY', 'Discovery: endpoint lost $endpointId');
+        },
+      );
 
-    if (!started) {
-      AppLogger.error('NEARBY', 'Failed to start discovery');
+      if (!started) {
+        AppLogger.error('NEARBY', 'Failed to start discovery');
+      }
+    } catch (error, stackTrace) {
+      AppLogger.warn(
+        'NEARBY',
+        'startDiscovery failed (permissions missing or Nearby unsupported).',
+      );
+      AppLogger.error(
+        'NEARBY',
+        'startDiscovery exception',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
     }
   }
 

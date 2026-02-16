@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
 
+import '../../core/utils/app_logger.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
 
 class ImageConverter {
@@ -17,8 +18,18 @@ class ImageConverter {
     };
 
     if (rawImage == null) {
+      AppLogger.throttled(
+        'ImageConverter.unsupportedFormat.${image.format.group}',
+        const Duration(seconds: 2),
+        () => AppLogger.warn(
+          'SCANNER',
+          'ImageConverter: unsupported CameraImage formatGroup=${image.format.group} '
+              '(raw=${image.format.raw}, planes=${image.planes.length})',
+        ),
+      );
       return null;
     }
+
     final normalizedRotation = ((rotationDegrees % 360) + 360) % 360;
     if (normalizedRotation == 0) {
       return rawImage;

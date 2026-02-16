@@ -95,8 +95,24 @@ class ProximityCubit extends Cubit<ProximityState> {
     _userName = userName.isEmpty ? 'malaqa' : userName;
     _ownerVector = ownerVector;
 
-    await _nearbyService.startDiscovery(userName: _userName);
-    emit(const ProximityDiscovering());
+    try {
+      await _nearbyService.startDiscovery(userName: _userName);
+      emit(const ProximityDiscovering());
+    } catch (error, stackTrace) {
+      // Nearby is optional: if permissions are missing (Android 13+)
+      // we keep the app usable and simply disable proximity.
+      AppLogger.warn(
+        'PROXIMITY',
+        'Nearby discovery disabled (optional feature). Reason: $error',
+      );
+      AppLogger.error(
+        'PROXIMITY',
+        'Discovery start failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      emit(const ProximityIdle());
+    }
   }
 
   Future<void> clearAuthentication() async {
@@ -121,13 +137,28 @@ class ProximityCubit extends Cubit<ProximityState> {
       guestVectorValues: guestVector.values,
     );
     final payload = jsonEncode(envelope.toJson());
-    await _nearbyService.startAdvertising(
-      userName: _userName,
-      payload: payload,
-    );
+    try {
+      await _nearbyService.startAdvertising(
+        userName: _userName,
+        payload: payload,
+      );
 
-    final expiresAt = DateTime.now().add(advertisingWindow);
-    emit(ProximityAdvertising(expiresAt: expiresAt));
+      final expiresAt = DateTime.now().add(advertisingWindow);
+      emit(ProximityAdvertising(expiresAt: expiresAt));
+    } catch (error, stackTrace) {
+      AppLogger.warn(
+        'PROXIMITY',
+        'Nearby advertising disabled (optional feature). Reason: $error',
+      );
+      AppLogger.error(
+        'PROXIMITY',
+        'Advertising start failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      emit(const ProximityIdle());
+      return;
+    }
 
     _advertisingTimer?.cancel();
     _advertisingTimer = Timer(advertisingWindow, () async {

@@ -128,8 +128,9 @@ class _AuthPageState extends State<AuthPage>
         selectedCamera,
         ResolutionPreset.medium,
         enableAudio: false,
-        imageFormatGroup:
-            Platform.isIOS ? ImageFormatGroup.bgra8888 : ImageFormatGroup.nv21,
+        imageFormatGroup: Platform.isIOS
+            ? ImageFormatGroup.bgra8888
+            : ImageFormatGroup.yuv420,
       );
       _cameraController = initializedController;
       initializedController.addListener(_logCameraControllerWarnings);
@@ -142,7 +143,7 @@ class _AuthPageState extends State<AuthPage>
       AppLogger.log(
         'SCANNER',
         'Requested imageFormatGroup='
-            '${Platform.isIOS ? ImageFormatGroup.bgra8888 : ImageFormatGroup.nv21}',
+            '${Platform.isIOS ? ImageFormatGroup.bgra8888 : ImageFormatGroup.yuv420}',
       );
       await initializedController.startImageStream(_processCameraFrame);
       AppLogger.log(
@@ -215,6 +216,17 @@ class _AuthPageState extends State<AuthPage>
     if (controller == null || !controller.value.isStreamingImages) {
       return;
     }
+
+    AppLogger.throttled(
+      'SCANNER.frameMeta',
+      const Duration(seconds: 2),
+      () => AppLogger.debug(
+        'SCANNER',
+        'frame: ${image.width}x${image.height} '
+            'formatGroup=${image.format.group} raw=${image.format.raw} '
+            'planes=${image.planes.length}',
+      ),
+    );
     if (_isProcessingFrame ||
         _isRecoveringImageStream ||
         _isDisposing ||
@@ -261,6 +273,17 @@ class _AuthPageState extends State<AuthPage>
             .take(2)
             .map(_faceBoundsFromFace)
             .toList(growable: false);
+
+        AppLogger.throttled(
+          'AUTH.processFrame.dispatch',
+          const Duration(seconds: 1),
+          () => AppLogger.debug(
+            'AUTH',
+            'Dispatching processFrame: faces=${bounds.length} '
+                'rotation=${request.rotationDegrees} front=${request.isFrontCamera}',
+          ),
+        );
+
         unawaited(context.read<AuthCubit>().processFrame(request, bounds));
       }
       if (state is AuthAuthenticated && sortedBoxes.isNotEmpty) {
@@ -683,9 +706,19 @@ class _AuthPageState extends State<AuthPage>
 
   Future<void> _createIdentityFromCurrentFace() async {
     if (_isCreatingIdentity || _isDisposing) {
+      AppLogger.debug('AUTH', 'CreateIdentity ignored: busy or disposing');
       return;
     }
     if (_latestFrame == null || _latestFaceBoxes.isEmpty) {
+      AppLogger.throttled(
+        'AUTH.noFaceForIdentity',
+        const Duration(seconds: 1),
+        () => AppLogger.warn(
+          'AUTH',
+          'CreateIdentity tapped but no face/frame available yet '
+              '(frame=${_latestFrame != null}, faces=${_latestFaceBoxes.length})',
+        ),
+      );
       if (!mounted) {
         return;
       }
@@ -729,7 +762,7 @@ class _AuthPageState extends State<AuthPage>
         ),
       )
           .timeout(
-        const Duration(seconds: 2),
+        const Duration(seconds: 8),
         onTimeout: () {
           captureTimedOut = true;
           return null;
@@ -743,7 +776,7 @@ class _AuthPageState extends State<AuthPage>
           SnackBar(
             content: Text(
               captureTimedOut
-                  ? 'Stillhalten-Timeout: Gesicht im Fokus - Halten Sie kurz still...'
+                  ? 'Biometrie-Modul braucht noch einen Moment (Timeout). Bitte kurz warten und erneut versuchen.'
                   : 'Gesicht im Fokus - Halten Sie kurz still...',
             ),
           ),
