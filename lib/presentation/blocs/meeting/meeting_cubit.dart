@@ -8,6 +8,7 @@ import '../../../domain/entities/face_vector.dart';
 import '../../../domain/entities/location_point.dart';
 import '../../../domain/entities/meeting_proof.dart';
 import '../../../domain/interfaces/biometric_scanner.dart';
+import '../../../domain/interfaces/location_provider.dart';
 import '../../../domain/repositories/chain_repository.dart';
 import '../../../domain/security/liveness_guard.dart';
 import '../../../domain/services/meeting_handshake_service.dart';
@@ -66,6 +67,7 @@ class MeetingCubit extends Cubit<MeetingState> {
     required MeetingHandshakeService handshakeService,
     required ChainRepository chainRepository,
     required CryptoProvider crypto,
+    required LocationProvider locationProvider,
     LivenessGuard? livenessGuard,
     this.scanInterval = const Duration(milliseconds: 500),
     this.ownerThreshold = 0.75,
@@ -74,6 +76,7 @@ class MeetingCubit extends Cubit<MeetingState> {
         _handshakeService = handshakeService,
         _chainRepository = chainRepository,
         _crypto = crypto,
+        _locationProvider = locationProvider,
         _livenessGuard = livenessGuard ?? LivenessGuard(),
         super(const MeetingIdle());
 
@@ -82,6 +85,7 @@ class MeetingCubit extends Cubit<MeetingState> {
   final MeetingHandshakeService _handshakeService;
   final ChainRepository _chainRepository;
   final CryptoProvider _crypto;
+  final LocationProvider _locationProvider;
   final LivenessGuard _livenessGuard;
 
   final Duration scanInterval;
@@ -269,13 +273,14 @@ class MeetingCubit extends Cubit<MeetingState> {
       // MVP single-device limitation:
       // guest key is generated locally as placeholder until real P2P handshake.
       final guestPlaceholder = await Identity.create(name: 'guest-mvp');
+      final meetingLocation = await _resolveMeetingLocation();
 
       final proof = await _handshakeService.createProof(
         participantA: ownerIdentity,
         participantB: guestPlaceholder,
         vectorA: ownerVector,
         vectorB: guestVector,
-        location: const LocationPoint(latitude: 0.0, longitude: 0.0),
+        location: meetingLocation,
         previousMeetingHash: previousHash,
         timestamp: DateTime.now().toUtc(),
       );
@@ -298,6 +303,37 @@ class MeetingCubit extends Cubit<MeetingState> {
       );
       emit(const MeetingError(message: 'Could not save meeting proof.'));
     }
+  }
+
+  Future<LocationPoint> _resolveMeetingLocation() async {
+    try {
+      final location = await _locationProvider.getCurrentLocation();
+      if (location != null && _isValidCoordinate(location)) {
+        return location;
+      }
+      AppLogger.warn(
+        'MEETING',
+        'Location unavailable for capture; falling back to 0,0.',
+      );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'MEETING',
+        'Failed to read current location; falling back to 0,0.',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    return const LocationPoint(latitude: 0.0, longitude: 0.0);
+  }
+
+  bool _isValidCoordinate(LocationPoint point) {
+    if (point.latitude < -90 || point.latitude > 90) {
+      return false;
+    }
+    if (point.longitude < -180 || point.longitude > 180) {
+      return false;
+    }
+    return true;
   }
 
   void resetAfterSuccess() {

@@ -7,12 +7,14 @@ import '../services/app_settings_service.dart';
 import '../../data/datasources/secure_key_value_store.dart';
 import '../../data/datasources/tflite_biometric_scanner.dart';
 import '../../data/datasources/nearby_service.dart';
+import '../../data/datasources/device_location_provider.dart';
 import '../../data/models/meeting_proof_model.dart';
 import '../../data/repositories/isar_chain_repository.dart';
 import '../../data/repositories/ipfs_repository.dart';
 import '../../data/repositories/ethereum_anchor_repository.dart';
 import '../../data/repositories/secure_identity_repository.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
+import '../../domain/interfaces/location_provider.dart';
 import '../../domain/gamification/badge_manager.dart';
 import '../../domain/repositories/chain_repository.dart';
 import '../../domain/repositories/identity_repository.dart';
@@ -85,6 +87,9 @@ Future<void> configureDependencies({
   }
   if (!getIt.isRegistered<NearbyService>()) {
     getIt.registerLazySingleton<NearbyService>(NearbyConnectionsService.new);
+  }
+  if (!getIt.isRegistered<LocationProvider>()) {
+    getIt.registerLazySingleton<LocationProvider>(DeviceLocationProvider.new);
   }
   if (!getIt.isRegistered<MeetingParticipantResolver>()) {
     getIt.registerLazySingleton<MeetingParticipantResolver>(
@@ -229,6 +234,7 @@ Future<void> configureDependencies({
         handshakeService: getIt<MeetingHandshakeService>(),
         chainRepository: getIt<ChainRepository>(),
         crypto: getIt<CryptoProvider>(),
+        locationProvider: getIt<LocationProvider>(),
       ),
     );
   }

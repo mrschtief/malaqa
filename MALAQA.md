@@ -356,11 +356,26 @@ Umgesetzt:
 - Datenfluss:
   - `MeetingParticipantResolver` liefert jetzt auch Owner/Gast-Indizes zur UI-Zuordnung.
   - bei Capture wird ein Proof gespeichert und die Chain lokal verlaengert.
+- Standortintegration (Update 17. Februar 2026):
+  - `MeetingCubit` versucht beim Capture die aktuelle Geraeteposition zu lesen.
+  - gueltige Koordinaten werden in den `MeetingProof` geschrieben und sind damit sofort map-faehig.
+  - bei fehlender Berechtigung/Service bleibt der Flow stabil (Fallback `0,0` + Log-Warnung).
 - MVP-Limitation explizit:
   - Gast-Signatur wird lokal ueber einen Placeholder-Key simuliert,
     bis echter P2P-Handshake (beidseitige Signatur) in Phase 2 voll integriert ist.
 - Tests erweitert:
-  - neuer `meeting_cubit_test.dart`.
+  - neuer `meeting_cubit_test.dart` inkl. Happy Path (echte Coordinates) und Edge-Fall (Fallback `0,0`).
+
+Offene Prioritaet (vor Blockchain):
+
+- Echter kryptografischer P2P-Signaturtausch statt Placeholder-Guest-Key:
+  1. Alice sendet kanonische Proof-Payload an Bob.
+  2. Bob signiert auf seinem Geraet mit seinem echten Private Key.
+  3. Bob sendet die Signatur an Alice zurueck.
+  4. Persistenz erst nach gueltiger beidseitiger Signatur.
+- Ziel:
+  - mathematisch belastbarer Zustimmungsnachweis des Guests
+  - keine "Self-asserted meetings" mehr.
 
 ### Milestone J: The Journey Timeline (Denkarium)
 
@@ -563,6 +578,13 @@ Umgesetzt:
   - `test/ipfs_repository_test.dart`
   - `test/decentralized_sync_service_test.dart`
 
+Offene Prioritaet (vor Blockchain):
+
+- Wechsel von `simulate` auf echten IPFS-Betrieb:
+  - Anbindung an echten Pinning-/Node-Pfad (z. B. Pinata oder Helia).
+  - Upload verschluesselter Proof-Artefakte.
+  - persistente Nutzung echter CIDs fuer spaeteres Restore auf neuem Geraet.
+
 ### Milestone Q: The Blockchain Anchor [x] Done
 
 Status: `abgeschlossen (offline-signing MVP, no-gas mode)`
@@ -623,6 +645,14 @@ Umgesetzt:
 - Testabdeckung:
   - neues `test/app_settings_service_test.dart` fuer First-Run/Toggle/Reset-Persistenz.
 
+Offene Prioritaet (vor Blockchain):
+
+- Identity-Restore-Flow vervollstaendigen:
+  - "I have an account"-Pfad im Onboarding.
+  - Eingabe/Validierung der Recovery Phrase.
+  - deterministische Re-Ableitung derselben Identity auf neuem Geraet.
+  - optional: automatisches Nachladen vorhandener Proofs ueber CID/IPFS.
+
 ### Implementierungsstand nach Modulen (Detail)
 
 `lib/core/`:
@@ -638,6 +668,7 @@ Umgesetzt:
 
 - `lib/data/datasources/tflite_biometric_scanner.dart`: Kamera-Frame + Face-Bounds -> echte MobileFaceNet Inferenz -> `FaceVector`.
 - `lib/data/datasources/nearby_service.dart`: P2P Discovery/Advertising/Payload-Transport als gekapselter Nearby-Adapter.
+- `lib/data/datasources/device_location_provider.dart`: liest aktuelle Geraeteposition fuer Meeting-Capture.
 - `lib/data/datasources/secure_key_value_store.dart`: Secure Storage Adapter fuer sensible Schluesseldaten.
 - `lib/data/models/meeting_proof_model.dart`: Isar Datenmodell + Mapping zwischen DB und Domain.
 - `lib/data/repositories/secure_identity_repository.dart`: sichere Persistenz/Restore von Identity Keys.
@@ -672,6 +703,7 @@ Umgesetzt:
 `lib/domain/interfaces/`:
 
 - `lib/domain/interfaces/biometric_scanner.dart`: Scanner-Interface inkl. `BiometricScanRequest` und `FaceBounds` vorhanden.
+- `lib/domain/interfaces/location_provider.dart`: Abstraktion fuer aktuelle Geraeteposition (testbarer Geo-Zugriff).
 
 `lib/domain/repositories/`:
 
@@ -936,6 +968,87 @@ Milestone R-UX:
   - Dezente Warnkarte mit `Icons.bluetooth_disabled` + `Aktivieren` (`openAppSettings`) im Overlay.
   - Kameraformat in Auth auf Android explizit `ImageFormatGroup.yuv420` gesichert (mit Warnkommentar).
 
+Milestone R-Geo:
+
+- [x] Done (17. Februar 2026) - Meeting-Location Capture + Map-Roundtrip:
+  - neue `LocationProvider`-Abstraktion + `DeviceLocationProvider` (Geolocator).
+  - `MeetingCubit` speichert beim Capture aktuelle Koordinaten statt fixem `0,0`.
+  - Soft-Fallback auf `0,0`, wenn Location nicht verfuegbar ist.
+  - Map bleibt robust und zeigt weiterhin nur valide Koordinaten.
+
+Milestone R-Next (geplant, vor Blockchain):
+
+- [ ] Echter P2P-Signaturtausch fuer MeetingProof (beidseitige Zustimmung kryptografisch beweisbar).
+- [ ] IPFS Real Mode inkl. echtem Uploadpfad und persistenten CIDs.
+- [ ] Identity Restore Flow im Onboarding ("I have an account" + Phrase-Recovery).
+- [ ] iOS-Validierung auf Realgeraeten inkl. Nearby-Interop Android <-> iOS.
+
+## 9. Entwicklungsplan: Blockchain Integration (Stand 17. Februar 2026)
+
+### 9.1 Aktueller Realitaetscheck
+
+Kann die App auf zwei Handys gespielt werden und per Blockchain claimen?
+
+- Ja fuer lokalen Meeting-Flow:
+  - APK auf zwei Android-Geraeten ist moeglich.
+  - P2P-Handshake (Nearby oder QR) funktioniert.
+  - `MeetingProof` wird kryptografisch signiert und lokal (Isar) persistiert.
+  - Begegnungen sind in Journey und Map sichtbar.
+- Nein fuer echtes On-Chain-Claiming:
+  - `EthereumAnchorRepository` laeuft derzeit standardmaessig mit `simulateOnly: true`.
+  - Signing/Transaction-Building sind echt, Broadcast auf ein reales Netzwerk ist noch nicht aktiviert.
+  - Es fehlt aktuell:
+    - deployed Smart Contract (`storeHash`) auf Testnet/Mainnet
+    - echte RPC-Integration (z. B. Infura/Alchemy)
+
+### 9.2 Roadmap 2026+: Von Simulation zu Web of Trust
+
+Phase 1 "The Real Network" (Q2 2026):
+
+- Milestone S (geplant): Smart Contract Deployment
+  - Minimaler `ProofRegistry`-Contract auf guenstigem L2-Testnetz (z. B. Polygon Amoy oder Base Sepolia).
+  - Kernfunktion: Mapping `proofHash -> blockTimestamp + participants`.
+- Milestone T (geplant): Live Anchoring
+  - `EthereumAnchorRepository` von `simulate` auf echten Broadcast umstellen.
+  - Optional Relayer oder Account Abstraction integrieren, damit User kein eigenes Gas-Handling brauchen.
+- Milestone U (geplant): Real IPFS Pinning
+  - Echte Pinning-Integration (z. B. Pinata oder eigener Helia/Node-Pfad) fuer dezentral abrufbare Metadaten.
+
+Phase 2 "The Web of Trust" (Q3 2026):
+
+- Milestone V (geplant): Graph Visualization
+  - Netzwerkansicht statt nur Timeline/Kette.
+  - Hop-Distanz/Verbindungsgrad zwischen Identities visualisieren.
+- Milestone W (geplant): Trust Score / Vouching
+  - Bewertungslogik fuer Vertrauensniveau.
+  - Basisfaktoren: Identity-Alter, Vielfalt der Meetings, Anchoring-Status.
+
+Phase 3 "Hardened Privacy & Recovery" (Q4 2026):
+
+- Milestone X (geplant): Social Recovery
+  - Wiederherstellung von Identity/Keymaterial ueber definierten Guardian-Kreis.
+- Milestone Y (geplant): Zero-Knowledge Proofs
+  - Langfristige ZKP-basierte Nachweise (z. B. Eigenschaften ohne Offenlegung biometrischer Rohdaten).
+
+Phase 4 "Ecosystem" (ab 2027):
+
+- Milestone Z (geplant): Malaqa SDK
+  - Integrationsfaehiges SDK fuer Drittprodukte (z. B. Events, Communities, Marktplaetze).
+
+### 9.3 Vorrangige Schritte vor Blockchain (kritische Luecken)
+
+1. Echter P2P-Signaturtausch (Milestone I Update)
+   - Beidseitige Signaturen ueber Nearby/QR austauschen, erst danach speichern.
+2. IPFS Real Mode (Milestone P Update)
+   - von lokalem Mock auf echten Upload + echte CIDs umstellen.
+3. Identity Restore (Milestone R Update)
+   - Onboarding-Flow fuer Recovery Phrase und Rehydration der Identity.
+4. iOS Validierung
+   - Realgeraete-Testmatrix fuer Permissions, Kamera, Nearby-Interoperabilitaet (iOS <-> Android).
+
+### 9.4 Danach: Live Blockchain Anchoring
+
+Erst nach Schliessung der Punkte aus 9.3 werden Smart-Contract-Deployment und Live-Broadcast (Milestones S und T) als Hauptfokus umgesetzt.
 ---
 
 Diese Datei ist der Masterplan. Operative Agenten-/Workflow-Regeln stehen in `AGENTS.md`.
