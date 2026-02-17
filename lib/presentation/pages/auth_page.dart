@@ -128,6 +128,7 @@ class _AuthPageState extends State<AuthPage>
         selectedCamera,
         ResolutionPreset.medium,
         enableAudio: false,
+        // WICHTIG: ImageFormatGroup.yuv420 ist zwingend fuer TFLite auf Pixel 10/Android 15. NICHT auf nv21 zuruecksetzen!
         imageFormatGroup: Platform.isIOS
             ? ImageFormatGroup.bgra8888
             : ImageFormatGroup.yuv420,

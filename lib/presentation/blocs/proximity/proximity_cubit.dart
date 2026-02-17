@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../core/utils/app_logger.dart';
@@ -59,6 +60,10 @@ class ProximityError extends ProximityState {
   final String message;
 }
 
+class ProximityPermissionError extends ProximityState {
+  const ProximityPermissionError();
+}
+
 class ProximityCubit extends Cubit<ProximityState> {
   ProximityCubit({
     required NearbyService nearbyService,
@@ -95,24 +100,7 @@ class ProximityCubit extends Cubit<ProximityState> {
     _userName = userName.isEmpty ? 'malaqa' : userName;
     _ownerVector = ownerVector;
 
-    try {
-      await _nearbyService.startDiscovery(userName: _userName);
-      emit(const ProximityDiscovering());
-    } catch (error, stackTrace) {
-      // Nearby is optional: if permissions are missing (Android 13+)
-      // we keep the app usable and simply disable proximity.
-      AppLogger.warn(
-        'PROXIMITY',
-        'Nearby discovery disabled (optional feature). Reason: $error',
-      );
-      AppLogger.error(
-        'PROXIMITY',
-        'Discovery start failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      emit(const ProximityIdle());
-    }
+    await _startDiscoveryOrEmitError();
   }
 
   Future<void> clearAuthentication() async {
@@ -142,32 +130,34 @@ class ProximityCubit extends Cubit<ProximityState> {
         userName: _userName,
         payload: payload,
       );
-
-      final expiresAt = DateTime.now().add(advertisingWindow);
-      emit(ProximityAdvertising(expiresAt: expiresAt));
     } catch (error, stackTrace) {
-      AppLogger.warn(
-        'PROXIMITY',
-        'Nearby advertising disabled (optional feature). Reason: $error',
-      );
-      AppLogger.error(
-        'PROXIMITY',
-        'Advertising start failed',
+      _handleProximityFailure(
+        operation: 'startAdvertising',
         error: error,
         stackTrace: stackTrace,
       );
-      emit(const ProximityIdle());
       return;
     }
+
+    final expiresAt = DateTime.now().add(advertisingWindow);
+    emit(ProximityAdvertising(expiresAt: expiresAt));
 
     _advertisingTimer?.cancel();
     _advertisingTimer = Timer(advertisingWindow, () async {
       if (!_isAuthenticated) {
         return;
       }
-      await _nearbyService.stopAll();
-      await _nearbyService.startDiscovery(userName: _userName);
-      emit(const ProximityDiscovering());
+      try {
+        await _nearbyService.stopAll();
+      } catch (error, stackTrace) {
+        _handleProximityFailure(
+          operation: 'stopAll',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return;
+      }
+      await _startDiscoveryOrEmitError();
     });
   }
 
@@ -237,6 +227,58 @@ class ProximityCubit extends Cubit<ProximityState> {
     await _nearbyService.stopAll();
     await _payloadSub?.cancel();
     return super.close();
+  }
+
+  Future<void> _startDiscoveryOrEmitError() async {
+    try {
+      await _nearbyService.startDiscovery(userName: _userName);
+      emit(const ProximityDiscovering());
+    } catch (error, stackTrace) {
+      _handleProximityFailure(
+        operation: 'startDiscovery',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  void _handleProximityFailure({
+    required String operation,
+    required Object error,
+    required StackTrace stackTrace,
+  }) {
+    if (_isPermissionError(error)) {
+      AppLogger.error(
+        'PROXIMITY',
+        'Nearby $operation failed due to missing permission',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      emit(const ProximityPermissionError());
+      return;
+    }
+    AppLogger.error(
+      'PROXIMITY',
+      'Nearby $operation failed',
+      error: error,
+      stackTrace: stackTrace,
+    );
+    emit(const ProximityError(message: 'Nearby not available right now.'));
+  }
+
+  bool _isPermissionError(Object error) {
+    if (error.runtimeType.toString() == 'PermissionException') {
+      return true;
+    }
+    if (error is PlatformException) {
+      final code = error.code.toLowerCase();
+      final message = (error.message ?? '').toLowerCase();
+      return code.contains('permission') ||
+          message.contains('permission') ||
+          message.contains('denied') ||
+          message.contains('not authorized');
+    }
+    return error.toString().toLowerCase().contains('permission');
   }
 }
 

@@ -927,6 +927,15 @@ Milestone R:
 
 - [x] Done - First-Run-Onboarding, Settings-Vault und kontrollierbarer Nearby-Visibility-/Reset-Flow.
 
+Milestone R-UX:
+
+- [x] Done (17. Februar 2026) - UX-Polish:
+  - Liveness auf "Smile ODER Blink" gelockert (Thresholds: Smile > 0.6, Left Eye < 0.2).
+  - Auth-Hinweis auf "Bitte laecheln ODER kurz blinzeln" vereinheitlicht.
+  - Nearby Permission-Fail auf Soft-Fail umgestellt (`ProximityPermissionError`) statt harter Fehler.
+  - Dezente Warnkarte mit `Icons.bluetooth_disabled` + `Aktivieren` (`openAppSettings`) im Overlay.
+  - Kameraformat in Auth auf Android explizit `ImageFormatGroup.yuv420` gesichert (mit Warnkommentar).
+
 ---
 
 Diese Datei ist der Masterplan. Operative Agenten-/Workflow-Regeln stehen in `AGENTS.md`.

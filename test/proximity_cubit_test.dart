@@ -15,6 +15,7 @@ class FakeNearbyService implements NearbyService {
 
   bool startedDiscovery = false;
   bool startedAdvertising = false;
+  bool failDiscoveryWithPermission = false;
 
   @override
   Stream<NearbyPayloadEvent> get payloadStream => controller.stream;
@@ -31,6 +32,9 @@ class FakeNearbyService implements NearbyService {
   Future<void> startDiscovery({
     required String userName,
   }) async {
+    if (failDiscoveryWithPermission) {
+      throw Exception('Permission denied for nearby discovery');
+    }
     startedDiscovery = true;
   }
 
@@ -118,6 +122,27 @@ void main() {
     await nearby.emitPayload(payload);
 
     expect(cubit.state, isA<ProximityDiscovering>());
+
+    await cubit.close();
+    await nearby.dispose();
+  });
+
+  test('ProximityCubit emits permission error when discovery permission fails',
+      () async {
+    final nearby = FakeNearbyService()..failDiscoveryWithPermission = true;
+    final cubit = ProximityCubit(
+      nearbyService: nearby,
+      proofImporter: FakeProofImporter(),
+      faceMatcher: FaceMatcherService(),
+      matchThreshold: 0.8,
+    );
+
+    await cubit.setAuthenticated(
+      userName: 'Bob',
+      ownerVector: FaceVector(const [1.0, 0.0, 0.0]),
+    );
+
+    expect(cubit.state, isA<ProximityPermissionError>());
 
     await cubit.close();
     await nearby.dispose();

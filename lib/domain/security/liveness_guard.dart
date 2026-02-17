@@ -23,8 +23,8 @@ class LivenessEvaluation {
 class LivenessGuard {
   LivenessGuard({
     Random? random,
-    this.smileThreshold = 0.4,
-    this.blinkThreshold = 0.3,
+    this.smileThreshold = 0.6,
+    this.blinkThreshold = 0.2,
   }) : _random = random ?? Random();
 
   final Random _random;
@@ -45,7 +45,6 @@ class LivenessGuard {
     final challenge = currentChallenge;
     final smileProb = face.smilingProbability ?? 0;
     final leftEyeOpenProb = face.leftEyeOpenProbability;
-    final rightEyeOpenProb = face.rightEyeOpenProbability;
 
     AppLogger.log(
       'LIVENESS',
@@ -53,13 +52,10 @@ class LivenessGuard {
     );
     AppLogger.log(
       'LIVENESS',
-      'Current Eye Open Probs: left=$leftEyeOpenProb right=$rightEyeOpenProb '
+      'Current Eye Open Prob: left=$leftEyeOpenProb '
           '(blinkThreshold=$blinkThreshold)',
     );
-    final passed = switch (challenge) {
-      LivenessChallenge.smile => smileProb >= smileThreshold,
-      LivenessChallenge.blink => _isBlink(face),
-    };
+    final passed = smileProb > smileThreshold || _isBlink(face);
     AppLogger.log(
       'LIVENESS',
       'Challenge=$challenge result=${passed ? 'PASSED' : 'FAILED'}',
@@ -79,21 +75,17 @@ class LivenessGuard {
 
   bool _isBlink(FaceBounds face) {
     final left = face.leftEyeOpenProbability;
-    final right = face.rightEyeOpenProbability;
-    if (left == null || right == null) {
+    if (left == null) {
       AppLogger.log(
         'LIVENESS',
-        'Blink evaluation skipped: missing eye probabilities',
+        'Blink evaluation skipped: missing left eye probability',
       );
       return false;
     }
-    return left <= blinkThreshold && right <= blinkThreshold;
+    return left < blinkThreshold;
   }
 
   String promptFor(LivenessChallenge challenge) {
-    return switch (challenge) {
-      LivenessChallenge.smile => 'Kurz laecheln!',
-      LivenessChallenge.blink => 'Kurz blinzeln!',
-    };
+    return 'Bitte laecheln ODER kurz blinzeln';
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../domain/services/proof_importer.dart';
 import '../../blocs/proximity/proximity_cubit.dart';
@@ -67,6 +68,16 @@ class ProximityNotificationOverlay extends StatelessWidget {
                 : isDuplicate
                     ? const Color(0xFF00CFE8)
                     : const Color(0xFFE74C3C),
+          );
+        } else if (state is ProximityPermissionError) {
+          child = _ProximityCard(
+            title: 'Nearby-Suche inaktiv. Berechtigungen fehlen.',
+            subtitle:
+                'Aktiviere Bluetooth/Nearby-Berechtigungen in den App-Einstellungen.',
+            primaryLabel: 'Aktivieren',
+            onPrimaryPressed: openAppSettings,
+            icon: Icons.bluetooth_disabled,
+            accentColor: Colors.orange,
           );
         }
 
