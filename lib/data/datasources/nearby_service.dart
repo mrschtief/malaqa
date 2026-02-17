@@ -28,6 +28,11 @@ abstract class NearbyService {
     required String userName,
   });
 
+  Future<void> sendPayload({
+    required String endpointId,
+    required String payload,
+  });
+
   Future<void> stopAll();
 }
 
@@ -202,6 +207,16 @@ class NearbyConnectionsService implements NearbyService {
     } on FormatException {
       AppLogger.error('NEARBY', 'Received non-UTF8 payload from $endpointId');
     }
+  }
+
+  @override
+  Future<void> sendPayload({
+    required String endpointId,
+    required String payload,
+  }) async {
+    final bytes = Uint8List.fromList(utf8.encode(payload));
+    await _nearby.sendBytesPayload(endpointId, bytes);
+    AppLogger.log('NEARBY', 'Payload sent to $endpointId');
   }
 
   @override

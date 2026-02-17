@@ -360,22 +360,15 @@ Umgesetzt:
   - `MeetingCubit` versucht beim Capture die aktuelle Geraeteposition zu lesen.
   - gueltige Koordinaten werden in den `MeetingProof` geschrieben und sind damit sofort map-faehig.
   - bei fehlender Berechtigung/Service bleibt der Flow stabil (Fallback `0,0` + Log-Warnung).
-- MVP-Limitation explizit:
-  - Gast-Signatur wird lokal ueber einen Placeholder-Key simuliert,
-    bis echter P2P-Handshake (beidseitige Signatur) in Phase 2 voll integriert ist.
+- P2P-Signaturtausch (Update 17. Februar 2026):
+  - Capture erzeugt zuerst einen Owner-signierten Draft-Proof.
+  - Nearby Request/Response tauscht echte Guest-Signatur vom zweiten Geraet aus.
+  - Persistenz erfolgt nur bei gueltiger beidseitiger Signaturpruefung.
+  - Timeout/Reject fuehren zu sauberem Fehlerzustand statt unsicherem Fallback-Speichern.
 - Tests erweitert:
   - neuer `meeting_cubit_test.dart` inkl. Happy Path (echte Coordinates) und Edge-Fall (Fallback `0,0`).
-
-Offene Prioritaet (vor Blockchain):
-
-- Echter kryptografischer P2P-Signaturtausch statt Placeholder-Guest-Key:
-  1. Alice sendet kanonische Proof-Payload an Bob.
-  2. Bob signiert auf seinem Geraet mit seinem echten Private Key.
-  3. Bob sendet die Signatur an Alice zurueck.
-  4. Persistenz erst nach gueltiger beidseitiger Signatur.
-- Ziel:
-  - mathematisch belastbarer Zustimmungsnachweis des Guests
-  - keine "Self-asserted meetings" mehr.
+- Offener Restpunkt:
+  - expliziter QR-basierter Signatur-Fallback (Sign-Request/Sign-Response ohne Nearby) ist noch offen.
 
 ### Milestone J: The Journey Timeline (Denkarium)
 
@@ -667,7 +660,7 @@ Offene Prioritaet (vor Blockchain):
 `lib/data/`:
 
 - `lib/data/datasources/tflite_biometric_scanner.dart`: Kamera-Frame + Face-Bounds -> echte MobileFaceNet Inferenz -> `FaceVector`.
-- `lib/data/datasources/nearby_service.dart`: P2P Discovery/Advertising/Payload-Transport als gekapselter Nearby-Adapter.
+- `lib/data/datasources/nearby_service.dart`: P2P Discovery/Advertising + bidirektionaler Payload-Transport (`sendPayload`) als Nearby-Adapter.
 - `lib/data/datasources/device_location_provider.dart`: liest aktuelle Geraeteposition fuer Meeting-Capture.
 - `lib/data/datasources/secure_key_value_store.dart`: Secure Storage Adapter fuer sensible Schluesseldaten.
 - `lib/data/models/meeting_proof_model.dart`: Isar Datenmodell + Mapping zwischen DB und Domain.
@@ -734,6 +727,8 @@ Offene Prioritaet (vor Blockchain):
 - `test/map_cubit_test.dart`: Geo-Transformationslogik fuer Marker/Polyline und Invalid-Filtering.
 - `test/proof_importer_test.dart`: QR-Importkern mit Validierung und Duplikat-Erkennung.
 - `test/proximity_cubit_test.dart`: Auto-Discovery Logik (Payload-Match vs. stille Verwerfung).
+- `test/proximity_cubit_test.dart`: Auto-Discovery plus Signature-Exchange (Success/Reject/Timeout).
+- `test/meeting_handshake_service_test.dart`: Draft-Proof + Payload-Signing fuer P2P-Signaturprotokoll.
 - `test/liveness_guard_test.dart`: Liveness-Challenge Sequenztest fuer Anti-Spoofing.
 - `test/ipfs_repository_test.dart`: canonical JSON + CID-Berechnung + Timeout-Fehlerpfad fuer IPFS-Bridge.
 - `test/decentralized_sync_service_test.dart`: Sync-Flow fuer unsynced Proofs inkl. Erfolgs-/Fehlerpfad.
@@ -978,7 +973,8 @@ Milestone R-Geo:
 
 Milestone R-Next (geplant, vor Blockchain):
 
-- [ ] Echter P2P-Signaturtausch fuer MeetingProof (beidseitige Zustimmung kryptografisch beweisbar).
+- [x] Echter P2P-Signaturtausch fuer MeetingProof ueber Nearby (beidseitige Zustimmung kryptografisch beweisbar).
+- [ ] QR-basierter Signatur-Fallback fuer den Fall ohne Nearby-Verbindung.
 - [ ] IPFS Real Mode inkl. echtem Uploadpfad und persistenten CIDs.
 - [ ] Identity Restore Flow im Onboarding ("I have an account" + Phrase-Recovery).
 - [ ] iOS-Validierung auf Realgeraeten inkl. Nearby-Interop Android <-> iOS.
@@ -1037,8 +1033,9 @@ Phase 4 "Ecosystem" (ab 2027):
 
 ### 9.3 Vorrangige Schritte vor Blockchain (kritische Luecken)
 
-1. Echter P2P-Signaturtausch (Milestone I Update)
-   - Beidseitige Signaturen ueber Nearby/QR austauschen, erst danach speichern.
+1. Echter P2P-Signaturtausch (Milestone I Update) - Nearby: erledigt
+   - Beidseitige Signaturen werden ueber Nearby ausgetauscht, erst danach wird gespeichert.
+   - QR-basierter Signatur-Fallback ist weiterhin offen.
 2. IPFS Real Mode (Milestone P Update)
    - von lokalem Mock auf echten Upload + echte CIDs umstellen.
 3. Identity Restore (Milestone R Update)

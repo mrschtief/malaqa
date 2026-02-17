@@ -75,6 +75,12 @@ class _FakeNearbyService implements NearbyService {
   }) async {}
 
   @override
+  Future<void> sendPayload({
+    required String endpointId,
+    required String payload,
+  }) async {}
+
+  @override
   Future<void> stopAll() async {}
 
   Future<void> emitPayload(String payload) async {
@@ -206,12 +212,14 @@ void main() {
         nearbyService: nearbyService,
         proofImporter: proofImporter,
         faceMatcher: FaceMatcherService(),
+        crypto: getIt<CryptoProvider>(),
         matchThreshold: 0.8,
         advertisingWindow: const Duration(seconds: 30),
       );
 
       await proximityCubit.setAuthenticated(
         userName: localIdentity.name,
+        identity: localIdentity,
         ownerVector: ownerVector,
       );
       expect(proximityCubit.state, isA<ProximityDiscovering>());

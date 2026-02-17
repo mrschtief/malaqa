@@ -1,12 +1,14 @@
 import 'package:camera/camera.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../core/crypto/ed25519_crypto_provider.dart';
 import '../../../core/identity.dart';
 import '../../../core/interfaces/crypto_provider.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../domain/entities/face_vector.dart';
 import '../../../domain/entities/location_point.dart';
 import '../../../domain/entities/meeting_proof.dart';
+import '../../../domain/entities/participant_signature.dart';
 import '../../../domain/interfaces/biometric_scanner.dart';
 import '../../../domain/interfaces/location_provider.dart';
 import '../../../domain/repositories/chain_repository.dart';
@@ -59,6 +61,11 @@ class MeetingError extends MeetingState {
 
   final String message;
 }
+
+typedef GuestSignatureRequester = Future<ParticipantSignature?> Function({
+  required MeetingProof draftProof,
+  required FaceVector guestVector,
+});
 
 class MeetingCubit extends Cubit<MeetingState> {
   MeetingCubit({
@@ -231,7 +238,9 @@ class MeetingCubit extends Cubit<MeetingState> {
     }
   }
 
-  Future<void> captureMeeting() async {
+  Future<void> captureMeeting({
+    GuestSignatureRequester? requestGuestSignature,
+  }) async {
     final ownerIdentity = _ownerIdentity;
     final ownerVector = _ownerVector;
     final initialGuestVector = _guestVector;
@@ -270,20 +279,62 @@ class MeetingCubit extends Cubit<MeetingState> {
         previousHash = await latest.computeProofHash(_crypto);
       }
 
-      // MVP single-device limitation:
-      // guest key is generated locally as placeholder until real P2P handshake.
-      final guestPlaceholder = await Identity.create(name: 'guest-mvp');
       final meetingLocation = await _resolveMeetingLocation();
-
-      final proof = await _handshakeService.createProof(
-        participantA: ownerIdentity,
-        participantB: guestPlaceholder,
+      final draftProof = await _handshakeService.createDraftProof(
         vectorA: ownerVector,
         vectorB: guestVector,
         location: meetingLocation,
         previousMeetingHash: previousHash,
         timestamp: DateTime.now().toUtc(),
       );
+      final ownerSignature = await _handshakeService.signProofPayload(
+        participant: ownerIdentity,
+        proof: draftProof,
+      );
+      final proofWithOwnerSignature = draftProof.copyWith(
+        signatures: <ParticipantSignature>[ownerSignature],
+      );
+      final guestSignature = await _requestGuestSignature(
+        proofWithOwnerSignature,
+        guestVector,
+        requestGuestSignature,
+      );
+      if (guestSignature == null) {
+        emit(
+          const MeetingError(
+            message: 'Guest signature missing. Retry or use QR fallback.',
+          ),
+        );
+        return;
+      }
+      final guestSignatureValid = await _verifySignature(
+        signature: guestSignature,
+        payload: draftProof.canonicalPayload().codeUnits,
+      );
+      if (!guestSignatureValid) {
+        emit(
+          const MeetingError(
+            message: 'Guest signature invalid. Retry capture.',
+          ),
+        );
+        return;
+      }
+
+      final proof = draftProof.copyWith(
+        signatures: <ParticipantSignature>[
+          ownerSignature,
+          guestSignature,
+        ],
+      );
+      final proofValid = await proof.verifyProof(_crypto);
+      if (!proofValid) {
+        emit(
+          const MeetingError(
+            message: 'Proof validation failed after signature exchange.',
+          ),
+        );
+        return;
+      }
 
       await _chainRepository.saveProof(proof);
       final allProofs = await _chainRepository.getAllProofs();
@@ -302,6 +353,30 @@ class MeetingCubit extends Cubit<MeetingState> {
         stackTrace: stackTrace,
       );
       emit(const MeetingError(message: 'Could not save meeting proof.'));
+    }
+  }
+
+  Future<ParticipantSignature?> _requestGuestSignature(
+    MeetingProof proofWithOwnerSignature,
+    FaceVector guestVector,
+    GuestSignatureRequester? requestGuestSignature,
+  ) async {
+    if (requestGuestSignature == null) {
+      return null;
+    }
+    try {
+      return await requestGuestSignature(
+        draftProof: proofWithOwnerSignature,
+        guestVector: guestVector,
+      );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'MEETING',
+        'Guest signature exchange failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
     }
   }
 
@@ -334,6 +409,21 @@ class MeetingCubit extends Cubit<MeetingState> {
       return false;
     }
     return true;
+  }
+
+  Future<bool> _verifySignature({
+    required ParticipantSignature signature,
+    required List<int> payload,
+  }) async {
+    try {
+      return _crypto.verify(
+        message: payload,
+        signature: hexToBytes(signature.signatureHex),
+        publicKey: hexToBytes(signature.publicKeyHex),
+      );
+    } catch (_) {
+      return false;
+    }
   }
 
   void resetAfterSuccess() {

@@ -844,6 +844,7 @@ class _AuthPageState extends State<AuthPage>
     if (_appSettings.nearbyVisibility) {
       await context.read<ProximityCubit>().setAuthenticated(
             userName: state.identity.name,
+            identity: state.identity,
             ownerVector: state.ownerVector,
           );
       return;
@@ -1091,9 +1092,25 @@ class _AuthPageState extends State<AuthPage>
                                   child: _AuthenticatedControls(
                                     state: state,
                                     meetingState: meetingState,
-                                    onCapture: () => context
-                                        .read<MeetingCubit>()
-                                        .captureMeeting(),
+                                    onCapture: () {
+                                      unawaited(
+                                        context
+                                            .read<MeetingCubit>()
+                                            .captureMeeting(
+                                          requestGuestSignature: ({
+                                            required draftProof,
+                                            required guestVector,
+                                          }) {
+                                            return context
+                                                .read<ProximityCubit>()
+                                                .requestGuestSignature(
+                                                  draftProof: draftProof,
+                                                  guestVector: guestVector,
+                                                );
+                                          },
+                                        ),
+                                      );
+                                    },
                                     onOpenMap: () => Navigator.of(context)
                                         .push(MapPage.route()),
                                     onOpenProfile: () => Navigator.of(context)

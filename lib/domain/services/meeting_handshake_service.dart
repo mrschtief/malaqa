@@ -12,6 +12,51 @@ class MeetingHandshakeService {
 
   final CryptoProvider _crypto;
 
+  Future<MeetingProof> createDraftProof({
+    required FaceVector vectorA,
+    required FaceVector vectorB,
+    required LocationPoint location,
+    required String previousMeetingHash,
+    DateTime? timestamp,
+  }) async {
+    AppLogger.log(
+      'HANDSHAKE',
+      'Creating draft meeting proof (prev=$previousMeetingHash)',
+    );
+
+    final saltedVectorHash = await _buildSaltedVectorHash(
+      vectorA: vectorA,
+      vectorB: vectorB,
+    );
+    AppLogger.log(
+      'HANDSHAKE',
+      'Salted face vectors hashed into draft payload',
+    );
+
+    return MeetingProof(
+      timestamp: (timestamp ?? DateTime.now().toUtc()).toIso8601String(),
+      location: location,
+      saltedVectorHash: saltedVectorHash,
+      previousMeetingHash: previousMeetingHash,
+      signatures: const [],
+    );
+  }
+
+  Future<ParticipantSignature> signProofPayload({
+    required Identity participant,
+    required MeetingProof proof,
+  }) async {
+    final payload = proof.canonicalPayload().codeUnits;
+    final signature = await participant.signPayload(
+      payload: payload,
+      crypto: _crypto,
+    );
+    return ParticipantSignature(
+      publicKeyHex: participant.publicKeyHex,
+      signatureHex: bytesToHex(signature),
+    );
+  }
+
   Future<MeetingProof> createProof({
     required Identity participantA,
     required Identity participantB,
@@ -26,6 +71,38 @@ class MeetingHandshakeService {
       'Creating meeting proof (prev=$previousMeetingHash)',
     );
 
+    final draftProof = await createDraftProof(
+      vectorA: vectorA,
+      vectorB: vectorB,
+      location: location,
+      previousMeetingHash: previousMeetingHash,
+      timestamp: timestamp,
+    );
+
+    final signatureA = await signProofPayload(
+      participant: participantA,
+      proof: draftProof,
+    );
+    final signatureB = await signProofPayload(
+      participant: participantB,
+      proof: draftProof,
+    );
+
+    final signedProof = draftProof.copyWith(
+      signatures: [signatureA, signatureB],
+    );
+
+    AppLogger.log(
+      'HANDSHAKE',
+      'Meeting proof signed by both participants',
+    );
+    return signedProof;
+  }
+
+  Future<String> _buildSaltedVectorHash({
+    required FaceVector vectorA,
+    required FaceVector vectorB,
+  }) async {
     final meetingSalt = _crypto.randomBytes(16);
     final saltedA = await vectorA.saltedHash(
       salt: meetingSalt,
@@ -35,60 +112,8 @@ class MeetingHandshakeService {
       salt: meetingSalt,
       hasher: _crypto.sha256,
     );
-
-    final ordered = [
-      (participantA.publicKeyHex, saltedA),
-      (participantB.publicKeyHex, saltedB),
-    ]..sort((x, y) => x.$1.compareTo(y.$1));
-
-    final combined = '${ordered[0].$2}|${ordered[1].$2}';
-    final saltedVectorHash =
-        bytesToHex(await _crypto.sha256(combined.codeUnits));
-    AppLogger.log(
-      'HANDSHAKE',
-      'Salted face vectors hashed into proof payload',
-    );
-
-    final proof = MeetingProof(
-      timestamp: (timestamp ?? DateTime.now().toUtc()).toIso8601String(),
-      location: location,
-      saltedVectorHash: saltedVectorHash,
-      previousMeetingHash: previousMeetingHash,
-      signatures: const [],
-    );
-
-    final payload = proof.canonicalPayload().codeUnits;
-
-    final signatureA = await participantA.signPayload(
-      payload: payload,
-      crypto: _crypto,
-    );
-    final signatureB = await participantB.signPayload(
-      payload: payload,
-      crypto: _crypto,
-    );
-
-    final signedProof = MeetingProof(
-      timestamp: proof.timestamp,
-      location: proof.location,
-      saltedVectorHash: proof.saltedVectorHash,
-      previousMeetingHash: proof.previousMeetingHash,
-      signatures: [
-        ParticipantSignature(
-          publicKeyHex: participantA.publicKeyHex,
-          signatureHex: bytesToHex(signatureA),
-        ),
-        ParticipantSignature(
-          publicKeyHex: participantB.publicKeyHex,
-          signatureHex: bytesToHex(signatureB),
-        ),
-      ],
-    );
-
-    AppLogger.log(
-      'HANDSHAKE',
-      'Meeting proof signed by both participants',
-    );
-    return signedProof;
+    final ordered = <String>[saltedA, saltedB]..sort();
+    final combined = '${ordered[0]}|${ordered[1]}';
+    return bytesToHex(await _crypto.sha256(combined.codeUnits));
   }
 }

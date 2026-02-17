@@ -5,6 +5,7 @@ import 'package:malaqa/core/interfaces/crypto_provider.dart';
 import 'package:malaqa/domain/entities/face_vector.dart';
 import 'package:malaqa/domain/entities/location_point.dart';
 import 'package:malaqa/domain/entities/meeting_proof.dart';
+import 'package:malaqa/domain/entities/participant_signature.dart';
 import 'package:malaqa/domain/interfaces/biometric_scanner.dart';
 import 'package:malaqa/domain/interfaces/location_provider.dart';
 import 'package:malaqa/domain/repositories/chain_repository.dart';
@@ -94,7 +95,10 @@ void main() {
   late MeetingCubit cubit;
   late FakeChainRepository chainRepository;
   late FakeLocationProvider locationProvider;
+  late MeetingHandshakeService handshakeService;
   late Identity owner;
+  late Identity guest;
+  late Future<ParticipantSignature> Function(MeetingProof) signAsGuest;
 
   setUp(() async {
     scanner = FakeScanner();
@@ -102,13 +106,15 @@ void main() {
     locationProvider = FakeLocationProvider(
       nextLocation: const LocationPoint(latitude: 52.5200, longitude: 13.4050),
     );
+    handshakeService = MeetingHandshakeService(FakeCryptoProvider());
     owner = await Identity.create(name: 'Owner');
+    guest = await Identity.create(name: 'Guest');
     cubit = MeetingCubit(
       scanner: scanner,
       participantResolver: MeetingParticipantResolver(
         FaceMatcherService(),
       ),
-      handshakeService: MeetingHandshakeService(FakeCryptoProvider()),
+      handshakeService: handshakeService,
       chainRepository: chainRepository,
       crypto: FakeCryptoProvider(),
       locationProvider: locationProvider,
@@ -119,6 +125,12 @@ void main() {
       identity: owner,
       ownerVector: FaceVector(const <double>[1.0, 0.0, 0.0]),
     );
+    signAsGuest = (draftProof) {
+      return handshakeService.signProofPayload(
+        participant: guest,
+        proof: draftProof,
+      );
+    };
   });
 
   tearDown(() async {
@@ -193,10 +205,18 @@ void main() {
       ],
     );
 
-    await cubit.captureMeeting();
+    await cubit.captureMeeting(
+      requestGuestSignature: ({
+        required draftProof,
+        required guestVector,
+      }) async {
+        return signAsGuest(draftProof);
+      },
+    );
 
     expect(cubit.state, isA<MeetingSuccess>());
     expect(chainRepository.proofs, hasLength(1));
+    expect(chainRepository.proofs.first.signatures, hasLength(2));
     expect(
         chainRepository.proofs.first.location.latitude, closeTo(52.52, 0.001));
     expect(
@@ -240,11 +260,63 @@ void main() {
       ],
     );
 
-    await cubit.captureMeeting();
+    await cubit.captureMeeting(
+      requestGuestSignature: ({
+        required draftProof,
+        required guestVector,
+      }) async {
+        return signAsGuest(draftProof);
+      },
+    );
 
     expect(cubit.state, isA<MeetingSuccess>());
     expect(chainRepository.proofs, hasLength(1));
     expect(chainRepository.proofs.first.location.latitude, 0.0);
     expect(chainRepository.proofs.first.location.longitude, 0.0);
+  });
+
+  test('captureMeeting fails when guest signature is missing', () async {
+    scanner.vectors = <FaceVector>[
+      FaceVector(const <double>[1.0, 0.0, 0.0]),
+      FaceVector(const <double>[0.0, 1.0, 0.0]),
+    ];
+    await cubit.processFrame(
+      BiometricScanRequest<CameraImage>(
+        image: DummyCameraImage(),
+        rotationDegrees: 0,
+      ),
+      const <FaceBounds>[
+        FaceBounds(
+          left: 0,
+          top: 0,
+          right: 10,
+          bottom: 10,
+          smilingProbability: 0.0,
+          leftEyeOpenProbability: 1.0,
+          rightEyeOpenProbability: 1.0,
+        ),
+        FaceBounds(
+          left: 20,
+          top: 0,
+          right: 30,
+          bottom: 10,
+          smilingProbability: 0.95,
+          leftEyeOpenProbability: 0.0,
+          rightEyeOpenProbability: 0.0,
+        ),
+      ],
+    );
+
+    await cubit.captureMeeting(
+      requestGuestSignature: ({
+        required draftProof,
+        required guestVector,
+      }) async {
+        return null;
+      },
+    );
+
+    expect(cubit.state, isA<MeetingError>());
+    expect(chainRepository.proofs, isEmpty);
   });
 }

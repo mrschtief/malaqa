@@ -153,6 +153,7 @@ class _SettingsPageState extends State<SettingsPage> {
     if (enabled && authState is AuthAuthenticated) {
       await context.read<ProximityCubit>().setAuthenticated(
             userName: authState.identity.name,
+            identity: authState.identity,
             ownerVector: authState.ownerVector,
           );
       return;

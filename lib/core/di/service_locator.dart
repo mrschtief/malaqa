@@ -268,6 +268,7 @@ Future<void> configureDependencies({
 
   if (getIt.isRegistered<ProofImporter>() &&
       getIt.isRegistered<NearbyService>() &&
+      getIt.isRegistered<CryptoProvider>() &&
       getIt.isRegistered<FaceMatcherService>() &&
       !getIt.isRegistered<ProximityCubit>()) {
     getIt.registerFactory<ProximityCubit>(
@@ -275,6 +276,7 @@ Future<void> configureDependencies({
         nearbyService: getIt<NearbyService>(),
         proofImporter: getIt<ProofImporter>(),
         faceMatcher: getIt<FaceMatcherService>(),
+        crypto: getIt<CryptoProvider>(),
       ),
     );
   }
