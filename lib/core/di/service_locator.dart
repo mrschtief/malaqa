@@ -168,7 +168,28 @@ Future<void> configureDependencies({
   }
 
   if (!getIt.isRegistered<IpfsRepository>()) {
-    getIt.registerLazySingleton<IpfsRepository>(HttpIpfsRepository.new);
+    getIt.registerLazySingleton<IpfsRepository>(() {
+      final endpointRaw = const String.fromEnvironment('MALAQA_IPFS_ENDPOINT');
+      final bearerToken =
+          const String.fromEnvironment('MALAQA_IPFS_BEARER_TOKEN');
+      final simulateRaw = const String.fromEnvironment(
+        'MALAQA_IPFS_SIMULATE',
+        defaultValue: 'true',
+      );
+      final endpoint =
+          endpointRaw.trim().isEmpty ? null : Uri.tryParse(endpointRaw.trim());
+      final simulateOnly = simulateRaw.toLowerCase() != 'false';
+      final headers = bearerToken.trim().isEmpty
+          ? null
+          : <String, String>{
+              'Authorization': 'Bearer ${bearerToken.trim()}',
+            };
+      return HttpIpfsRepository(
+        endpoint: endpoint,
+        simulateOnly: simulateOnly,
+        headers: headers,
+      );
+    });
   }
 
   if (getIt.isRegistered<ChainRepository>() &&

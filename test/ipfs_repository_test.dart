@@ -98,6 +98,39 @@ void main() {
     );
   });
 
+  test('http upload forwards configured auth headers', () async {
+    final proof = await _createProof();
+    late Map<String, String> headers;
+
+    final client = _TestClient((request) async {
+      headers = Map<String, String>.from(request.headers);
+      return _jsonResponse({'cid': 'bafyremoteproofcid456'});
+    });
+
+    final repository = HttpIpfsRepository(
+      client: client,
+      endpoint: Uri.parse('https://ipfs.example/upload'),
+      simulateOnly: false,
+      headers: const <String, String>{
+        'Authorization': 'Bearer test-token',
+        'X-Custom': 'malaqa',
+      },
+    );
+
+    final cid = await repository.uploadProof(proof);
+
+    expect(cid, 'bafyremoteproofcid456');
+    expect(
+      headers['Authorization'] ?? headers['authorization'],
+      'Bearer test-token',
+    );
+    expect(headers['X-Custom'] ?? headers['x-custom'], 'malaqa');
+    expect(
+      headers['Content-Type'] ?? headers['content-type'],
+      'application/json',
+    );
+  });
+
   test('http upload throws IpfsUploadException on timeout', () async {
     final proof = await _createProof();
 

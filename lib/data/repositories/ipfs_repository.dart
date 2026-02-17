@@ -29,15 +29,20 @@ class HttpIpfsRepository implements IpfsRepository {
     Uri? endpoint,
     Duration timeout = const Duration(seconds: 10),
     bool simulateOnly = true,
+    Map<String, String>? headers,
   })  : _client = client ?? http.Client(),
         _endpoint = endpoint,
         _timeout = timeout,
-        _simulateOnly = simulateOnly;
+        _simulateOnly = simulateOnly,
+        _headers = Map<String, String>.unmodifiable(
+          headers ?? const <String, String>{},
+        );
 
   final http.Client _client;
   final Uri? _endpoint;
   final Duration _timeout;
   final bool _simulateOnly;
+  final Map<String, String> _headers;
 
   static String computeCid(String canonicalJson) {
     return CID.createCid(canonicalJson, Multibase.base32).cid;
@@ -67,8 +72,9 @@ class HttpIpfsRepository implements IpfsRepository {
       final response = await _client
           .post(
             _endpoint,
-            headers: const <String, String>{
+            headers: <String, String>{
               'Content-Type': 'application/json',
+              ..._headers,
             },
             body: payload,
           )

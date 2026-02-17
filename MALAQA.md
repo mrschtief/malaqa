@@ -577,6 +577,12 @@ Offene Prioritaet (vor Blockchain):
   - Anbindung an echten Pinning-/Node-Pfad (z. B. Pinata oder Helia).
   - Upload verschluesselter Proof-Artefakte.
   - persistente Nutzung echter CIDs fuer spaeteres Restore auf neuem Geraet.
+- Konfigurationsupdate (17. Februar 2026):
+  - `HttpIpfsRepository` unterstuetzt jetzt optionale HTTP-Header (z. B. Bearer-Token).
+  - DI kann per `dart-define` umgeschaltet werden:
+    - `MALAQA_IPFS_SIMULATE=true|false`
+    - `MALAQA_IPFS_ENDPOINT=https://...`
+    - `MALAQA_IPFS_BEARER_TOKEN=...`
 
 ### Milestone Q: The Blockchain Anchor [x] Done
 

@@ -43,6 +43,17 @@ class FakeCryptoProvider implements CryptoProvider {
   }
 }
 
+class AlwaysInvalidVerifyCryptoProvider extends FakeCryptoProvider {
+  @override
+  Future<bool> verify({
+    required List<int> message,
+    required List<int> signature,
+    required List<int> publicKey,
+  }) async {
+    return false;
+  }
+}
+
 class FakeNearbyService implements NearbyService {
   final controller = StreamController<NearbyPayloadEvent>.broadcast();
   final List<String> sentPayloads = <String>[];
@@ -355,6 +366,53 @@ void main() {
     await nearby.dispose();
   });
 
+  test('requestGuestSignature ignores response with mismatched request id',
+      () async {
+    final nearby = FakeNearbyService();
+    final crypto = FakeCryptoProvider();
+    final owner = await Identity.create(name: 'Owner');
+    final draft = await _ownerSignedDraft(
+      crypto: crypto,
+      owner: owner,
+    );
+    final cubit = ProximityCubit(
+      nearbyService: nearby,
+      proofImporter: FakeProofImporter(),
+      faceMatcher: FaceMatcherService(),
+      crypto: crypto,
+      matchThreshold: 0.8,
+      signatureRequestTimeout: const Duration(milliseconds: 80),
+    );
+    await cubit.setAuthenticated(
+      userName: owner.name,
+      identity: owner,
+      ownerVector: FaceVector(const [1.0, 0.0, 0.0]),
+    );
+
+    final requestFuture = cubit.requestGuestSignature(
+      draftProof: draft,
+      guestVector: FaceVector(const [1.0, 0.0, 0.0]),
+    );
+    await Future<void>.delayed(Duration.zero);
+    final requestJson =
+        jsonDecode(nearby.lastAdvertisingPayload!) as Map<String, dynamic>;
+    final wrongResponse = jsonEncode({
+      'type': 'meeting_sign_response_v1',
+      'requestId': '${requestJson['requestId']}-other',
+      'signature': {
+        'publicKeyHex': owner.publicKeyHex,
+        'signatureHex': 'aa',
+      },
+    });
+    await nearby.emitPayload(wrongResponse);
+
+    final resolved = await requestFuture;
+    expect(resolved, isNull);
+
+    await cubit.close();
+    await nearby.dispose();
+  });
+
   test('incoming sign request sends reject on face mismatch', () async {
     final nearby = FakeNearbyService();
     final crypto = FakeCryptoProvider();
@@ -389,6 +447,45 @@ void main() {
     final sent = jsonDecode(nearby.sentPayloads.last) as Map<String, dynamic>;
     expect(sent['type'], 'meeting_sign_reject_v1');
     expect(sent['requestId'], 'req-1');
+
+    await cubit.close();
+    await nearby.dispose();
+  });
+
+  test('incoming sign request rejects invalid initiator signature', () async {
+    final nearby = FakeNearbyService();
+    final owner = await Identity.create(name: 'Owner');
+    final initiator = await Identity.create(name: 'Initiator');
+    final draft = await _ownerSignedDraft(
+      crypto: FakeCryptoProvider(),
+      owner: initiator,
+    );
+    final cubit = ProximityCubit(
+      nearbyService: nearby,
+      proofImporter: FakeProofImporter(),
+      faceMatcher: FaceMatcherService(),
+      crypto: AlwaysInvalidVerifyCryptoProvider(),
+      matchThreshold: 0.8,
+    );
+    await cubit.setAuthenticated(
+      userName: owner.name,
+      identity: owner,
+      ownerVector: FaceVector(const [1.0, 0.0, 0.0]),
+    );
+
+    final request = jsonEncode({
+      'type': 'meeting_sign_request_v1',
+      'requestId': 'req-invalid-sig',
+      'proof': draft.toJson(),
+      'guestVector': const [1.0, 0.0, 0.0],
+    });
+    await nearby.emitPayload(request, endpointId: 'endpoint-x');
+
+    expect(nearby.sentPayloads, isNotEmpty);
+    final sent = jsonDecode(nearby.sentPayloads.last) as Map<String, dynamic>;
+    expect(sent['type'], 'meeting_sign_reject_v1');
+    expect(sent['requestId'], 'req-invalid-sig');
+    expect(sent['reason'], 'invalid-initiator-signature');
 
     await cubit.close();
     await nearby.dispose();
