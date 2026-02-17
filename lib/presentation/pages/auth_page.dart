@@ -11,6 +11,9 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../core/di/service_locator.dart';
 import '../../core/services/app_settings_service.dart';
 import '../../core/utils/app_logger.dart';
+import '../../domain/entities/face_vector.dart';
+import '../../domain/entities/meeting_proof.dart';
+import '../../domain/entities/participant_signature.dart';
 import '../../domain/interfaces/biometric_scanner.dart';
 import '../blocs/auth/auth_cubit.dart';
 import '../blocs/meeting/meeting_cubit.dart';
@@ -18,6 +21,7 @@ import '../blocs/proximity/proximity_cubit.dart';
 import 'map_page.dart';
 import 'profile_page.dart';
 import 'qr_scan_page.dart';
+import 'qr_signature_exchange_page.dart';
 import '../widgets/proximity/proximity_notification.dart';
 
 class AuthPage extends StatefulWidget {
@@ -867,6 +871,26 @@ class _AuthPageState extends State<AuthPage>
     unawaited(_syncProximityForAuth(state));
   }
 
+  Future<ParticipantSignature?> _requestGuestSignatureWithFallback({
+    required MeetingProof draftProof,
+    required FaceVector guestVector,
+  }) async {
+    final proximityCubit = context.read<ProximityCubit>();
+    final viaNearby = await proximityCubit.requestGuestSignature(
+      draftProof: draftProof,
+      guestVector: guestVector,
+    );
+    if (viaNearby != null || !mounted) {
+      return viaNearby;
+    }
+    return Navigator.of(context).push<ParticipantSignature?>(
+      QrSignatureExchangePage.route(
+        draftProof: draftProof,
+        guestVector: guestVector,
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _isDisposing = true;
@@ -1101,12 +1125,10 @@ class _AuthPageState extends State<AuthPage>
                                             required draftProof,
                                             required guestVector,
                                           }) {
-                                            return context
-                                                .read<ProximityCubit>()
-                                                .requestGuestSignature(
-                                                  draftProof: draftProof,
-                                                  guestVector: guestVector,
-                                                );
+                                            return _requestGuestSignatureWithFallback(
+                                              draftProof: draftProof,
+                                              guestVector: guestVector,
+                                            );
                                           },
                                         ),
                                       );

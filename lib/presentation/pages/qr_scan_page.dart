@@ -1,7 +1,17 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../core/di/service_locator.dart';
+import '../../core/crypto/ed25519_crypto_provider.dart';
+import '../../core/interfaces/crypto_provider.dart';
+import '../../domain/entities/face_vector.dart';
+import '../../domain/entities/meeting_signature_exchange.dart';
+import '../../domain/entities/participant_signature.dart';
+import '../../domain/repositories/identity_repository.dart';
+import '../../domain/services/face_matcher_service.dart';
 import '../../domain/services/proof_importer.dart';
 
 enum _ScanUiState {
@@ -9,6 +19,7 @@ enum _ScanUiState {
   success,
   duplicate,
   invalid,
+  signatureReady,
 }
 
 class QrScanPage extends StatefulWidget {
@@ -33,6 +44,7 @@ class _QrScanPageState extends State<QrScanPage> {
   bool _isImporting = false;
   _ScanUiState _state = _ScanUiState.scanning;
   String _message = 'Scan a meeting QR proof';
+  String? _signatureResponsePayload;
 
   @override
   void dispose() {
@@ -60,6 +72,19 @@ class _QrScanPageState extends State<QrScanPage> {
 
     _isImporting = true;
     await _scannerController.stop();
+
+    final signaturePayload = await _tryBuildSignatureResponsePayload(raw);
+    if (!mounted) {
+      return;
+    }
+    if (signaturePayload != null) {
+      setState(() {
+        _state = _ScanUiState.signatureReady;
+        _signatureResponsePayload = signaturePayload.$1;
+        _message = signaturePayload.$2;
+      });
+      return;
+    }
 
     final importer = getIt<ProofImporter>();
     final result = await importer.importProof(raw);
@@ -91,8 +116,101 @@ class _QrScanPageState extends State<QrScanPage> {
       _state = _ScanUiState.scanning;
       _message = 'Scan a meeting QR proof';
       _isImporting = false;
+      _signatureResponsePayload = null;
     });
     await _scannerController.start();
+  }
+
+  Future<(String, String)?> _tryBuildSignatureResponsePayload(
+      String raw) async {
+    final request = MeetingSignRequestEnvelope.tryParseRaw(raw);
+    if (request == null) {
+      return null;
+    }
+
+    final identityRepository = getIt<IdentityRepository>();
+    final faceMatcher = getIt<FaceMatcherService>();
+    final crypto = getIt<CryptoProvider>();
+    final identity = await identityRepository.getIdentity();
+    final ownerVector = await identityRepository.getOwnerFaceVector();
+    if (identity == null || ownerVector == null) {
+      return (
+        _rejectPayload(request.requestId, 'not-authenticated'),
+        'Keine lokale Identity gefunden. Anfrage wird abgelehnt.',
+      );
+    }
+
+    final similarity = faceMatcher.compare(
+      FaceVector(request.guestVectorValues),
+      ownerVector,
+    );
+    if (similarity < 0.8) {
+      return (
+        _rejectPayload(request.requestId, 'face-mismatch'),
+        'Gesicht passt nicht zur Anfrage. Anfrage wird abgelehnt.',
+      );
+    }
+
+    if (request.proof.signatures.length != 1) {
+      return (
+        _rejectPayload(request.requestId, 'invalid-proof-shape'),
+        'Anfrage hat ungueltiges Proof-Format.',
+      );
+    }
+
+    final initiatorSig = request.proof.signatures.first;
+    final initiatorValid = await _verifySignature(
+      crypto: crypto,
+      signature: initiatorSig,
+      payload: request.proof.canonicalPayload().codeUnits,
+    );
+    if (!initiatorValid) {
+      return (
+        _rejectPayload(request.requestId, 'invalid-initiator-signature'),
+        'Anfrage-Signatur ist ungueltig.',
+      );
+    }
+
+    final signed = await identity.signPayload(
+      payload: request.proof.canonicalPayload().codeUnits,
+      crypto: crypto,
+    );
+    final response = MeetingSignResponseEnvelope(
+      requestId: request.requestId,
+      signature: ParticipantSignature(
+        publicKeyHex: identity.publicKeyHex,
+        signatureHex: bytesToHex(signed),
+      ),
+    );
+    return (
+      jsonEncode(response.toJson()),
+      'Signatur erstellt. Partner soll diesen QR jetzt scannen.',
+    );
+  }
+
+  String _rejectPayload(String requestId, String reason) {
+    return jsonEncode(
+      MeetingSignRejectEnvelope(
+        requestId: requestId,
+        reason: reason,
+      ).toJson(),
+    );
+  }
+
+  Future<bool> _verifySignature({
+    required CryptoProvider crypto,
+    required ParticipantSignature signature,
+    required List<int> payload,
+  }) async {
+    try {
+      return crypto.verify(
+        message: payload,
+        signature: hexToBytes(signature.signatureHex),
+        publicKey: hexToBytes(signature.publicKeyHex),
+      );
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
@@ -107,10 +225,25 @@ class _QrScanPageState extends State<QrScanPage> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          MobileScanner(
-            controller: _scannerController,
-            onDetect: _onDetect,
-          ),
+          if (_state != _ScanUiState.signatureReady)
+            MobileScanner(
+              controller: _scannerController,
+              onDetect: _onDetect,
+            ),
+          if (_state == _ScanUiState.signatureReady &&
+              _signatureResponsePayload != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: AspectRatio(
+                  aspectRatio: 1,
+                  child: QrImageView(
+                    data: _signatureResponsePayload!,
+                    version: QrVersions.auto,
+                  ),
+                ),
+              ),
+            ),
           Center(
             child: Container(
               width: 250,
@@ -160,6 +293,7 @@ class _QrScanPageState extends State<QrScanPage> {
                           _ScanUiState.success => Icons.check_circle_outline,
                           _ScanUiState.duplicate => Icons.info_outline,
                           _ScanUiState.invalid => Icons.error_outline,
+                          _ScanUiState.signatureReady => Icons.qr_code_2,
                           _ScanUiState.scanning => Icons.qr_code_scanner,
                         },
                         size: 76,
@@ -167,6 +301,8 @@ class _QrScanPageState extends State<QrScanPage> {
                           _ScanUiState.success => const Color(0xFF2ECC71),
                           _ScanUiState.duplicate => const Color(0xFF00CFE8),
                           _ScanUiState.invalid => const Color(0xFFE74C3C),
+                          _ScanUiState.signatureReady =>
+                            const Color(0xFF00CFE8),
                           _ScanUiState.scanning => Colors.white,
                         },
                       ),

@@ -365,10 +365,14 @@ Umgesetzt:
   - Nearby Request/Response tauscht echte Guest-Signatur vom zweiten Geraet aus.
   - Persistenz erfolgt nur bei gueltiger beidseitiger Signaturpruefung.
   - Timeout/Reject fuehren zu sauberem Fehlerzustand statt unsicherem Fallback-Speichern.
+- QR-Signatur-Fallback (Update 17. Februar 2026):
+  - Owner-Seite kann bei ausbleibender Nearby-Antwort auf QR-Signaturtausch wechseln.
+  - Request-QR (`meeting_sign_request_v1`) wird angezeigt und Antwort-QR (`meeting_sign_response_v1`) gescannt.
+  - Guest-Seite (`QrScanPage`) erkennt Sign-Requests und erzeugt Response- oder Reject-QR.
 - Tests erweitert:
   - neuer `meeting_cubit_test.dart` inkl. Happy Path (echte Coordinates) und Edge-Fall (Fallback `0,0`).
 - Offener Restpunkt:
-  - expliziter QR-basierter Signatur-Fallback (Sign-Request/Sign-Response ohne Nearby) ist noch offen.
+  - UI-Polish fuer den QR-Fallback-Flow (Guidance/Fehlertexte) ist noch offen.
 
 ### Milestone J: The Journey Timeline (Denkarium)
 
@@ -680,6 +684,7 @@ Offene Prioritaet (vor Blockchain):
 - `lib/domain/entities/location_point.dart`: Entitaet, Canonical String und JSON Roundtrip vorhanden.
 - `lib/domain/entities/participant_signature.dart`: Entitaet, Canonical String und JSON Roundtrip vorhanden.
 - `lib/domain/entities/meeting_proof.dart`: Payload/Proof Canonicalisierung, Hash-Bildung, Signaturpruefung und JSON Roundtrip vorhanden.
+- `lib/domain/entities/meeting_signature_exchange.dart`: Envelope-Modelle fuer Sign-Request/Response/Reject ueber Nearby und QR.
 
 `lib/domain/services/`:
 
@@ -732,9 +737,9 @@ Offene Prioritaet (vor Blockchain):
 - `test/badge_manager_test.dart`: Badge-Unlock-Logik fuer leeres Profil und Erst-Meeting.
 - `test/map_cubit_test.dart`: Geo-Transformationslogik fuer Marker/Polyline und Invalid-Filtering.
 - `test/proof_importer_test.dart`: QR-Importkern mit Validierung und Duplikat-Erkennung.
-- `test/proximity_cubit_test.dart`: Auto-Discovery Logik (Payload-Match vs. stille Verwerfung).
-- `test/proximity_cubit_test.dart`: Auto-Discovery plus Signature-Exchange (Success/Reject/Timeout).
+- `test/proximity_cubit_test.dart`: Auto-Discovery plus Signature-Exchange (Success/Reject/Timeout/Falsche Request-ID/Invalid Initiator Signature).
 - `test/meeting_handshake_service_test.dart`: Draft-Proof + Payload-Signing fuer P2P-Signaturprotokoll.
+- `test/meeting_signature_exchange_test.dart`: Parsing/Serialization der Signatur-Exchange-Envelopes.
 - `test/liveness_guard_test.dart`: Liveness-Challenge Sequenztest fuer Anti-Spoofing.
 - `test/ipfs_repository_test.dart`: canonical JSON + CID-Berechnung + Timeout-Fehlerpfad fuer IPFS-Bridge.
 - `test/decentralized_sync_service_test.dart`: Sync-Flow fuer unsynced Proofs inkl. Erfolgs-/Fehlerpfad.
@@ -980,7 +985,7 @@ Milestone R-Geo:
 Milestone R-Next (geplant, vor Blockchain):
 
 - [x] Echter P2P-Signaturtausch fuer MeetingProof ueber Nearby (beidseitige Zustimmung kryptografisch beweisbar).
-- [ ] QR-basierter Signatur-Fallback fuer den Fall ohne Nearby-Verbindung.
+- [x] QR-basierter Signatur-Fallback fuer den Fall ohne Nearby-Verbindung.
 - [ ] IPFS Real Mode inkl. echtem Uploadpfad und persistenten CIDs.
 - [ ] Identity Restore Flow im Onboarding ("I have an account" + Phrase-Recovery).
 - [ ] iOS-Validierung auf Realgeraeten inkl. Nearby-Interop Android <-> iOS.
@@ -1039,9 +1044,8 @@ Phase 4 "Ecosystem" (ab 2027):
 
 ### 9.3 Vorrangige Schritte vor Blockchain (kritische Luecken)
 
-1. Echter P2P-Signaturtausch (Milestone I Update) - Nearby: erledigt
-   - Beidseitige Signaturen werden ueber Nearby ausgetauscht, erst danach wird gespeichert.
-   - QR-basierter Signatur-Fallback ist weiterhin offen.
+1. Echter P2P-Signaturtausch (Milestone I Update) - Nearby + QR: erledigt
+   - Beidseitige Signaturen werden ueber Nearby oder QR ausgetauscht, erst danach wird gespeichert.
 2. IPFS Real Mode (Milestone P Update)
    - von lokalem Mock auf echten Upload + echte CIDs umstellen.
 3. Identity Restore (Milestone R Update)

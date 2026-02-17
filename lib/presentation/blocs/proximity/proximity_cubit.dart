@@ -12,6 +12,7 @@ import '../../../core/interfaces/crypto_provider.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../domain/entities/face_vector.dart';
 import '../../../domain/entities/meeting_proof.dart';
+import '../../../domain/entities/meeting_signature_exchange.dart';
 import '../../../domain/entities/participant_signature.dart';
 import '../../../domain/services/face_matcher_service.dart';
 import '../../../domain/services/proof_importer.dart';
@@ -205,7 +206,7 @@ class ProximityCubit extends Cubit<ProximityState> {
     _advertisingTimer = null;
 
     final payload = jsonEncode(
-      _MeetingSignRequestEnvelope(
+      MeetingSignRequestEnvelope(
         requestId: requestId,
         proof: draftProof,
         guestVectorValues: guestVector.values,
@@ -396,7 +397,7 @@ class ProximityCubit extends Cubit<ProximityState> {
   }
 
   bool _tryResolvePendingSignatureRequest(Map<String, dynamic> decoded) {
-    final response = _MeetingSignResponseEnvelope.tryParse(decoded);
+    final response = MeetingSignResponseEnvelope.tryParse(decoded);
     if (response != null) {
       final completer = _pendingSignatureRequests[response.requestId];
       if (completer != null && !completer.isCompleted) {
@@ -405,7 +406,7 @@ class ProximityCubit extends Cubit<ProximityState> {
       return true;
     }
 
-    final reject = _MeetingSignRejectEnvelope.tryParse(decoded);
+    final reject = MeetingSignRejectEnvelope.tryParse(decoded);
     if (reject != null) {
       final completer = _pendingSignatureRequests[reject.requestId];
       if (completer != null && !completer.isCompleted) {
@@ -424,7 +425,7 @@ class ProximityCubit extends Cubit<ProximityState> {
     required String endpointId,
     required Map<String, dynamic> decoded,
   }) async {
-    final request = _MeetingSignRequestEnvelope.tryParse(decoded);
+    final request = MeetingSignRequestEnvelope.tryParse(decoded);
     if (request == null) {
       return false;
     }
@@ -478,7 +479,7 @@ class ProximityCubit extends Cubit<ProximityState> {
         payload: request.proof.canonicalPayload().codeUnits,
         crypto: _crypto,
       );
-      final response = _MeetingSignResponseEnvelope(
+      final response = MeetingSignResponseEnvelope(
         requestId: request.requestId,
         signature: ParticipantSignature(
           publicKeyHex: _identity!.publicKeyHex,
@@ -512,7 +513,7 @@ class ProximityCubit extends Cubit<ProximityState> {
   }) async {
     try {
       final payload = jsonEncode(
-        _MeetingSignRejectEnvelope(
+        MeetingSignRejectEnvelope(
           requestId: requestId,
           reason: reason,
         ).toJson(),
@@ -600,130 +601,5 @@ class _ProximityEnvelope {
       debugPrintStack(stackTrace: stackTrace);
       return null;
     }
-  }
-}
-
-const String _meetingSignRequestType = 'meeting_sign_request_v1';
-const String _meetingSignResponseType = 'meeting_sign_response_v1';
-const String _meetingSignRejectType = 'meeting_sign_reject_v1';
-
-class _MeetingSignRequestEnvelope {
-  const _MeetingSignRequestEnvelope({
-    required this.requestId,
-    required this.proof,
-    required this.guestVectorValues,
-  });
-
-  final String requestId;
-  final MeetingProof proof;
-  final List<double> guestVectorValues;
-
-  Map<String, dynamic> toJson() {
-    return {
-      'type': _meetingSignRequestType,
-      'requestId': requestId,
-      'proof': proof.toJson(),
-      'guestVector': guestVectorValues,
-    };
-  }
-
-  static _MeetingSignRequestEnvelope? tryParse(Map<String, dynamic> decoded) {
-    try {
-      if (decoded['type'] != _meetingSignRequestType) {
-        return null;
-      }
-      final requestId = decoded['requestId'] as String?;
-      final proofJson = decoded['proof'];
-      final guestVectorJson = decoded['guestVector'];
-      if (requestId == null ||
-          proofJson is! Map<String, dynamic> ||
-          guestVectorJson is! List) {
-        return null;
-      }
-      final vectorValues = guestVectorJson
-          .map((value) => (value as num).toDouble())
-          .toList(growable: false);
-      if (vectorValues.isEmpty) {
-        return null;
-      }
-      return _MeetingSignRequestEnvelope(
-        requestId: requestId,
-        proof: MeetingProof.fromJson(proofJson),
-        guestVectorValues: vectorValues,
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-}
-
-class _MeetingSignResponseEnvelope {
-  const _MeetingSignResponseEnvelope({
-    required this.requestId,
-    required this.signature,
-  });
-
-  final String requestId;
-  final ParticipantSignature signature;
-
-  Map<String, dynamic> toJson() {
-    return {
-      'type': _meetingSignResponseType,
-      'requestId': requestId,
-      'signature': signature.toJson(),
-    };
-  }
-
-  static _MeetingSignResponseEnvelope? tryParse(Map<String, dynamic> decoded) {
-    try {
-      if (decoded['type'] != _meetingSignResponseType) {
-        return null;
-      }
-      final requestId = decoded['requestId'] as String?;
-      final signatureJson = decoded['signature'];
-      if (requestId == null || signatureJson is! Map<String, dynamic>) {
-        return null;
-      }
-      return _MeetingSignResponseEnvelope(
-        requestId: requestId,
-        signature: ParticipantSignature.fromJson(signatureJson),
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-}
-
-class _MeetingSignRejectEnvelope {
-  const _MeetingSignRejectEnvelope({
-    required this.requestId,
-    required this.reason,
-  });
-
-  final String requestId;
-  final String reason;
-
-  Map<String, dynamic> toJson() {
-    return {
-      'type': _meetingSignRejectType,
-      'requestId': requestId,
-      'reason': reason,
-    };
-  }
-
-  static _MeetingSignRejectEnvelope? tryParse(Map<String, dynamic> decoded) {
-    final type = decoded['type'];
-    if (type != _meetingSignRejectType) {
-      return null;
-    }
-    final requestId = decoded['requestId'] as String?;
-    final reason = decoded['reason'] as String?;
-    if (requestId == null || reason == null) {
-      return null;
-    }
-    return _MeetingSignRejectEnvelope(
-      requestId: requestId,
-      reason: reason,
-    );
   }
 }
